@@ -1,4 +1,27 @@
-data/*.json
-data/*.tmp
-node_modules/
+# 环境变量
 .env
+.env.local
+.env.production
+
+# 数据文件（使用持久化存储）
+data/db.json
+data/*.json
+
+# 日志文件
+*.log
+server.err.log
+server.out.log
+
+# 临时文件
+.DS_Store
+Thumbs.db
+*.tmp
+
+# 依赖
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

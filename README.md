@@ -2,16 +2,28 @@
 
 一个无第三方依赖的 Node.js 单页应用，用于 QQ 群内公共报名 25 人副本活动。
 
-## 启动
+## 本地启动
 
 ```powershell
 $env:ADMIN_PASSWORD="换成你的管理员密码"
+$env:DB_PATH="./data/db.json"
 npm start
 ```
 
 浏览器打开 `http://localhost:3000`。
 
 如果没有设置 `ADMIN_PASSWORD`，本地开发默认管理员密码是 `admin123`。正式使用时请务必设置环境变量。
+
+## 部署到 Railway（免费）
+
+详见 [DEPLOY-RAILWAY.md](./DEPLOY-RAILWAY.md)
+
+快速步骤：
+1. 推送代码到 GitHub 公开仓库
+2. 在 [railway.app](https://railway.app) 创建项目，选择 GitHub 仓库
+3. 设置环境变量：`ADMIN_PASSWORD`、`DB_PATH=/data/db.json`
+4. 创建持久化存储：挂载路径 `/data`
+5. 等待部署完成
 
 ## 功能
 
