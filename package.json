@@ -1,0 +1,12 @@
+{
+  "name": "qq-raid-signup",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QQ群副本活动公共报名网页应用",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
