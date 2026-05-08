@@ -8,30 +8,42 @@ const roleLabels = {
 
 let appState = null;
 let currentUser = loadUser();
+let selectedActivityId = localStorage.getItem("selectedActivityId") || "";
 let selectedSlot = null;
+let selectedSlotActivityId = "";
 let draftHeartbeat = null;
 let refreshTimer = null;
 let auditLoadedOnce = false;
+let isCreatingActivity = false;
 
 const elements = {
   activitySubtitle: document.querySelector("#activitySubtitle"),
   userBadge: document.querySelector("#userBadge"),
   logoutBtn: document.querySelector("#logoutBtn"),
   adminToggleBtn: document.querySelector("#adminToggleBtn"),
+  loginPanel: document.querySelector("#loginPanel"),
+  loginForm: document.querySelector("#loginForm"),
+  qqInput: document.querySelector("#qqInput"),
+  displayNameInput: document.querySelector("#displayNameInput"),
+  activityListSection: document.querySelector("#activityListSection"),
+  activityCards: document.querySelector("#activityCards"),
+  emptyActivities: document.querySelector("#emptyActivities"),
+  refreshActivitiesBtn: document.querySelector("#refreshActivitiesBtn"),
+  detailPanel: document.querySelector("#detailPanel"),
   statusPill: document.querySelector("#statusPill"),
   timeRange: document.querySelector("#timeRange"),
   activityTitle: document.querySelector("#activityTitle"),
   activityMeta: document.querySelector("#activityMeta"),
   summaryStats: document.querySelector("#summaryStats"),
-  loginPanel: document.querySelector("#loginPanel"),
-  loginForm: document.querySelector("#loginForm"),
-  qqInput: document.querySelector("#qqInput"),
-  displayNameInput: document.querySelector("#displayNameInput"),
   adminPanel: document.querySelector("#adminPanel"),
   activityForm: document.querySelector("#activityForm"),
+  activityFormTitle: document.querySelector("#activityFormTitle"),
+  activityIdInput: document.querySelector("#activityIdInput"),
   activityNameInput: document.querySelector("#activityNameInput"),
-  instanceInput: document.querySelector("#instanceInput"),
+  difficultyInput: document.querySelector("#difficultyInput"),
   typeInput: document.querySelector("#typeInput"),
+  creatorNameInput: document.querySelector("#creatorNameInput"),
+  creatorQqInput: document.querySelector("#creatorQqInput"),
   startTimeInput: document.querySelector("#startTimeInput"),
   endTimeInput: document.querySelector("#endTimeInput"),
   statusInput: document.querySelector("#statusInput"),
@@ -40,11 +52,14 @@ const elements = {
   bossCountInput: document.querySelector("#bossCountInput"),
   dpsCountInput: document.querySelector("#dpsCountInput"),
   countTotal: document.querySelector("#countTotal"),
+  newActivityBtn: document.querySelector("#newActivityBtn"),
+  activitySubmitBtn: document.querySelector("#activitySubmitBtn"),
   refreshAuditBtn: document.querySelector("#refreshAuditBtn"),
   clearSignupsBtn: document.querySelector("#clearSignupsBtn"),
   adminLogoutBtn: document.querySelector("#adminLogoutBtn"),
   auditList: document.querySelector("#auditList"),
   boardHint: document.querySelector("#boardHint"),
+  backToListBtn: document.querySelector("#backToListBtn"),
   refreshBtn: document.querySelector("#refreshBtn"),
   board: document.querySelector("#board"),
   signupDialog: document.querySelector("#signupDialog"),
@@ -106,15 +121,15 @@ async function api(path, options = {}) {
 }
 
 function showToast(message, type = "info") {
-  elements.toast.textContent = message;
   const inferredType =
     type !== "info"
       ? type
-      : /失败|错误|不能|需要|请先|关闭|已报名|不存在|只可|冲突|不正确/.test(message)
+      : /失败|错误|不能|需要|请先|关闭|结束|已报名|不存在|只可|冲突|不正确/.test(message)
         ? "error"
-        : /成功|已保存|已刷新|已登录|已退出|已清空|已登出|已撤销/.test(message)
+        : /成功|已保存|已刷新|已登录|已退出|已清空|已登出|已撤销|已创建/.test(message)
           ? "success"
           : "info";
+  elements.toast.textContent = message;
   elements.toast.dataset.type = inferredType;
   elements.toast.hidden = false;
   clearTimeout(showToast.timer);
@@ -138,6 +153,13 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(date);
+}
+
+function formatTimeRange(activity) {
+  if (!activity?.startTime && !activity?.endTime) {
+    return "时间待定";
+  }
+  return `${formatDateTime(activity.startTime) || "开始待定"} - ${formatDateTime(activity.endTime) || "结束待定"}`;
 }
 
 function toLocalInputValue(value) {
@@ -194,20 +216,54 @@ function renderUser() {
   }
 }
 
+function renderActivityCards() {
+  const activities = appState.activities || [];
+  elements.emptyActivities.hidden = activities.length > 0;
+  elements.activityCards.innerHTML = activities
+    .map((activity) => {
+      const selected = activity.id === selectedActivityId;
+      return `
+        <article class="activity-card ${selected ? "selected" : ""}" data-activity-id="${activity.id}">
+          <div class="activity-card-top">
+            <strong class="activity-card-title">${escapeHtml(activity.title)}</strong>
+            <span class="activity-status ${activity.status}">${escapeHtml(activity.statusLabel)}</span>
+          </div>
+          <div class="activity-card-meta">
+            <span class="difficulty-pill ${activity.difficulty}">${escapeHtml(activity.difficultyLabel)}</span>
+            <span>${escapeHtml(formatTimeRange(activity))}</span>
+          </div>
+          <div class="activity-card-foot">
+            <span>创建者：${escapeHtml(activity.creatorLabel)}</span>
+            <span>${activity.signed}/${activity.total} 已报名</span>
+          </div>
+          <button class="primary-button detail-button" type="button" data-activity-id="${activity.id}">查看详情</button>
+        </article>
+      `;
+    })
+    .join("");
+
+  for (const card of elements.activityCards.querySelectorAll(".activity-card")) {
+    card.addEventListener("click", (event) => {
+      const id = event.currentTarget.dataset.activityId;
+      selectActivity(id);
+    });
+  }
+}
+
 function renderSummary() {
   const activity = appState.activity;
-  const title = activity.instanceName || activity.name || "25人副本报名";
-  const timeText =
-    activity.startTime || activity.endTime
-      ? `${formatDateTime(activity.startTime) || "开始待定"} - ${formatDateTime(activity.endTime) || "结束待定"}`
-      : "时间待定";
+  if (!activity) {
+    elements.detailPanel.hidden = true;
+    return;
+  }
 
-  elements.activitySubtitle.textContent = `${activity.type || "普通活动"} · ${timeText}`;
-  elements.activityTitle.textContent = title;
-  elements.activityMeta.textContent = `${activity.name || "25人副本报名"} · ${activity.type || "普通活动"}`;
-  elements.timeRange.textContent = timeText;
-  elements.statusPill.textContent = activity.status === "closed" ? "封榜" : "开榜";
-  elements.statusPill.className = `status-pill ${activity.status === "closed" ? "closed" : "open"}`;
+  elements.detailPanel.hidden = false;
+  elements.activitySubtitle.textContent = `${activity.difficultyLabel} · ${formatTimeRange(activity)}`;
+  elements.activityTitle.textContent = activity.title || "25人副本报名";
+  elements.activityMeta.textContent = `${activity.difficultyLabel} · ${activity.type || "普通活动"} · 创建者 ${activity.creatorLabel}`;
+  elements.timeRange.textContent = formatTimeRange(activity);
+  elements.statusPill.textContent = activity.statusLabel;
+  elements.statusPill.className = `status-pill ${activity.status}`;
 
   elements.summaryStats.innerHTML = roleOrder
     .map((role) => {
@@ -224,28 +280,50 @@ function renderSummary() {
     .join("");
 }
 
+function fillActivityForm(activity) {
+  const source =
+    activity || {
+      id: "",
+      title: "",
+      difficulty: "normal",
+      type: "普通活动",
+      startTime: "",
+      endTime: "",
+      status: "active",
+      creator: { name: currentUser?.displayName || "管理员", qq: currentUser?.qq || "" },
+      counts: { tank: 4, healer: 5, boss: 0, dps: 16 }
+    };
+
+  elements.activityIdInput.value = source.id || "";
+  elements.activityNameInput.value = source.title || "";
+  elements.difficultyInput.value = source.difficulty || "normal";
+  elements.typeInput.value = source.type || "普通活动";
+  elements.creatorNameInput.value = source.creator?.name || "";
+  elements.creatorQqInput.value = source.creator?.qq || "";
+  elements.startTimeInput.value = toLocalInputValue(source.startTime);
+  elements.endTimeInput.value = toLocalInputValue(source.endTime);
+  elements.statusInput.value = source.status || "active";
+  elements.tankCountInput.value = source.counts?.tank ?? 4;
+  elements.healerCountInput.value = source.counts?.healer ?? 5;
+  elements.bossCountInput.value = source.counts?.boss ?? 0;
+  elements.dpsCountInput.value = source.counts?.dps ?? 16;
+  elements.activityFormTitle.textContent = source.id ? "编辑当前活动" : "创建新活动";
+  elements.activitySubmitBtn.textContent = source.id ? "保存活动" : "创建活动";
+  updateCountTotal();
+}
+
 function renderAdminPanel(options = {}) {
   elements.adminPanel.hidden = !appState.isAdmin;
   if (!appState.isAdmin) {
     auditLoadedOnce = false;
+    isCreatingActivity = false;
     return;
   }
 
   const shouldPreserveForm =
     options.preserveAdminForm || elements.activityForm.contains(document.activeElement);
   if (!shouldPreserveForm) {
-    const activity = appState.activity;
-    elements.activityNameInput.value = activity.name || "";
-    elements.instanceInput.value = activity.instanceName || "";
-    elements.typeInput.value = activity.type || "";
-    elements.startTimeInput.value = toLocalInputValue(activity.startTime);
-    elements.endTimeInput.value = toLocalInputValue(activity.endTime);
-    elements.statusInput.value = activity.status || "open";
-    elements.tankCountInput.value = activity.counts.tank;
-    elements.healerCountInput.value = activity.counts.healer;
-    elements.bossCountInput.value = activity.counts.boss;
-    elements.dpsCountInput.value = activity.counts.dps;
-    updateCountTotal();
+    fillActivityForm(isCreatingActivity ? null : appState.activity);
   }
 
   if (!options.skipAudit && !auditLoadedOnce) {
@@ -370,14 +448,32 @@ function escapeHtml(value) {
 
 function renderAll(options = {}) {
   renderUser();
+  renderActivityCards();
   renderSummary();
   renderAdminPanel(options);
   renderBoard();
 }
 
 async function loadState(options = {}) {
-  appState = await api("/api/state");
+  const id = options.activityId ?? selectedActivityId;
+  const query = id ? `?activityId=${encodeURIComponent(id)}` : "";
+  appState = await api(`/api/state${query}`);
+  selectedActivityId = appState.selectedActivityId;
+  if (selectedActivityId) {
+    localStorage.setItem("selectedActivityId", selectedActivityId);
+  }
   renderAll(options);
+}
+
+async function selectActivity(activityId) {
+  if (selectedSlot) {
+    await releaseSelectedDraft();
+  }
+  isCreatingActivity = false;
+  selectedActivityId = activityId;
+  localStorage.setItem("selectedActivityId", activityId);
+  await loadState({ activityId });
+  elements.detailPanel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function updateCountTotal() {
@@ -419,8 +515,8 @@ async function openSignupDialog(slotId) {
     return;
   }
 
-  if (appState.activity.status === "closed" && !appState.isAdmin) {
-    showToast("当前活动已关闭报名");
+  if (appState.activity.status === "ended" && !appState.isAdmin) {
+    showToast("当前活动已结束");
     return;
   }
 
@@ -429,6 +525,7 @@ async function openSignupDialog(slotId) {
       appState = await api("/api/drafts", {
         method: "POST",
         body: JSON.stringify({
+          activityId: selectedActivityId,
           qq: currentUser.qq,
           displayName: currentUser.displayName || "",
           slotId
@@ -437,14 +534,15 @@ async function openSignupDialog(slotId) {
       renderAll({ preserveAdminForm: true, skipAudit: true });
     }
   } catch (error) {
-    await loadState({ preserveAdminForm: true, skipAudit: true }).catch(() => {});
+    await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true }).catch(() => {});
     showToast(error.message);
     return;
   }
 
   selectedSlot = slot;
+  selectedSlotActivityId = selectedActivityId;
   elements.slotIdInput.value = slot.id;
-  elements.dialogRole.textContent = slot.label;
+  elements.dialogRole.textContent = `${appState.activity.title} · ${slot.label}`;
   elements.dialogTitle.textContent = signup ? (appState.isAdmin ? "管理员调整报名" : "修改报名") : "填写报名";
   elements.dialogQqInput.value = currentUser.displayName
     ? `${currentUser.displayName} · QQ ${currentUser.qq}`
@@ -488,6 +586,7 @@ function startDraftHeartbeat(slotId) {
       appState = await api("/api/drafts", {
         method: "POST",
         body: JSON.stringify({
+          activityId: selectedSlotActivityId,
           qq: currentUser.qq,
           displayName: currentUser.displayName || "",
           slotId
@@ -512,12 +611,15 @@ async function releaseSelectedDraft() {
   stopDraftHeartbeat();
   if (!selectedSlot || !currentUser) {
     selectedSlot = null;
+    selectedSlotActivityId = "";
     return;
   }
   const slotId = selectedSlot.id;
+  const activityId = selectedSlotActivityId;
   const draft = appState?.drafts?.[slotId];
   const signup = appState?.signups?.[slotId];
   selectedSlot = null;
+  selectedSlotActivityId = "";
   if (!draft || signup || draft.qq !== currentUser.qq) {
     return;
   }
@@ -525,11 +627,11 @@ async function releaseSelectedDraft() {
   try {
     appState = await api(`/api/drafts/${encodeURIComponent(slotId)}`, {
       method: "DELETE",
-      body: JSON.stringify({ qq: currentUser.qq })
+      body: JSON.stringify({ activityId, qq: currentUser.qq })
     });
     renderAll({ preserveAdminForm: true, skipAudit: true });
   } catch {
-    await loadState({ preserveAdminForm: true, skipAudit: true }).catch(() => {});
+    await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true }).catch(() => {});
   }
 }
 
@@ -540,6 +642,7 @@ async function submitSignup(event) {
   }
 
   const body = {
+    activityId: selectedSlotActivityId || selectedActivityId,
     qq: currentUser.qq,
     slotId: selectedSlot.id,
     spec: selectedSlot.role === "boss" ? "老板" : elements.specInput.value,
@@ -556,6 +659,7 @@ async function submitSignup(event) {
     });
     stopDraftHeartbeat();
     selectedSlot = null;
+    selectedSlotActivityId = "";
     elements.signupDialog.close();
     renderAll();
     showToast("报名已保存");
@@ -576,10 +680,11 @@ async function deleteSignup() {
   try {
     appState = await api(`/api/signups/${encodeURIComponent(selectedSlot.id)}`, {
       method: "DELETE",
-      body: JSON.stringify({ qq: currentUser?.qq || "" })
+      body: JSON.stringify({ activityId: selectedSlotActivityId || selectedActivityId })
     });
     stopDraftHeartbeat();
     selectedSlot = null;
+    selectedSlotActivityId = "";
     elements.signupDialog.close();
     renderAll();
     showToast("报名已撤销");
@@ -616,38 +721,48 @@ async function submitAdminLogin(event) {
     elements.adminDialog.close();
     elements.adminPasswordInput.value = "";
     auditLoadedOnce = false;
-    await loadState();
+    await loadState({ activityId: selectedActivityId });
     showToast("管理员已登录");
   } catch (error) {
     showToast(error.message);
   }
 }
 
+function activityFormPayload() {
+  return {
+    activityId: elements.activityIdInput.value,
+    title: elements.activityNameInput.value,
+    difficulty: elements.difficultyInput.value,
+    type: elements.typeInput.value,
+    creatorName: elements.creatorNameInput.value,
+    creatorQq: elements.creatorQqInput.value,
+    startTime: elements.startTimeInput.value,
+    endTime: elements.endTimeInput.value,
+    status: elements.statusInput.value,
+    counts: {
+      tank: Number(elements.tankCountInput.value),
+      healer: Number(elements.healerCountInput.value),
+      boss: Number(elements.bossCountInput.value),
+      dps: Number(elements.dpsCountInput.value)
+    }
+  };
+}
+
 async function submitActivity(event) {
   event.preventDefault();
-  const counts = {
-    tank: Number(elements.tankCountInput.value),
-    healer: Number(elements.healerCountInput.value),
-    boss: Number(elements.bossCountInput.value),
-    dps: Number(elements.dpsCountInput.value)
-  };
-
+  const payload = activityFormPayload();
+  const isCreate = !payload.activityId;
   try {
-    appState = await api("/api/activity", {
+    appState = await api(isCreate ? "/api/activities" : "/api/activity", {
       method: "POST",
-      body: JSON.stringify({
-        name: elements.activityNameInput.value,
-        instanceName: elements.instanceInput.value,
-        type: elements.typeInput.value,
-        startTime: elements.startTimeInput.value,
-        endTime: elements.endTimeInput.value,
-        status: elements.statusInput.value,
-        counts
-      })
+      body: JSON.stringify(payload)
     });
+    isCreatingActivity = false;
+    selectedActivityId = appState.selectedActivityId;
+    localStorage.setItem("selectedActivityId", selectedActivityId);
     auditLoadedOnce = false;
     renderAll();
-    showToast("活动设置已保存");
+    showToast(isCreate ? "活动已创建" : "活动已保存");
   } catch (error) {
     showToast(error.message);
   }
@@ -690,7 +805,7 @@ async function clearSignups() {
   try {
     appState = await api("/api/activity/clear", {
       method: "POST",
-      body: JSON.stringify({ reason: "活动结束，清空全部报名" })
+      body: JSON.stringify({ activityId: selectedActivityId, reason: "活动结束，清空全部报名" })
     });
     auditLoadedOnce = false;
     renderAll();
@@ -704,7 +819,7 @@ async function adminLogout() {
   try {
     await api("/api/admin/logout", { method: "POST", body: "{}" });
     auditLoadedOnce = false;
-    await loadState();
+    await loadState({ activityId: selectedActivityId });
     showToast("已退出后台");
   } catch (error) {
     showToast(error.message);
@@ -718,7 +833,7 @@ function startAutoRefresh() {
       return;
     }
     try {
-      await loadState({ preserveAdminForm: true, skipAudit: true });
+      await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
     } catch {
       // 下一轮刷新会继续尝试。
     }
@@ -734,9 +849,16 @@ elements.logoutBtn.addEventListener("click", async () => {
   renderAll();
   showToast("已登出");
 });
+elements.refreshActivitiesBtn.addEventListener("click", async () => {
+  await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
+  showToast("活动列表已刷新");
+});
 elements.refreshBtn.addEventListener("click", async () => {
-  await loadState({ skipAudit: true });
-  showToast("已刷新");
+  await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
+  showToast("名册已刷新");
+});
+elements.backToListBtn.addEventListener("click", () => {
+  elements.activityListSection.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 elements.adminToggleBtn.addEventListener("click", () => {
   if (appState?.isAdmin) {
@@ -744,6 +866,10 @@ elements.adminToggleBtn.addEventListener("click", () => {
   } else {
     elements.adminDialog.showModal();
   }
+});
+elements.newActivityBtn.addEventListener("click", () => {
+  isCreatingActivity = true;
+  fillActivityForm(null);
 });
 elements.closeDialogBtn.addEventListener("click", () => elements.signupDialog.close());
 elements.signupDialog.addEventListener("close", releaseSelectedDraft);

@@ -10,10 +10,10 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="brand-block">
-          <span class="brand-mark" aria-hidden="true">副</span>
+          <span class="brand-mark" aria-hidden="true">令</span>
           <div>
             <h1>团本召集令</h1>
-            <p id="activitySubtitle">正在读取活动信息...</p>
+            <p id="activitySubtitle">正在读取活动列表...</p>
           </div>
         </div>
         <div class="user-area">
@@ -24,18 +24,6 @@
       </header>
 
       <main>
-        <section class="summary-band" aria-label="活动概览">
-          <div class="summary-main">
-            <div class="status-line">
-              <span id="statusPill" class="status-pill">开放报名</span>
-              <span id="timeRange">时间待定</span>
-            </div>
-            <h2 id="activityTitle">25人副本报名</h2>
-            <p id="activityMeta">默认 4T / 5奶 / 16输出 / 0老板</p>
-          </div>
-          <div class="summary-stats" id="summaryStats"></div>
-        </section>
-
         <section id="loginPanel" class="work-section" aria-label="QQ 登录">
           <div class="section-heading">
             <h2>入册</h2>
@@ -54,28 +42,56 @@
           </form>
         </section>
 
+        <section id="activityListSection" class="activity-list-section" aria-label="活动列表">
+          <div class="section-heading">
+            <div>
+              <h2>活动列表</h2>
+              <p>选择一张活动卡进入报名名册。</p>
+            </div>
+            <button id="refreshActivitiesBtn" class="ghost-button" type="button">刷新</button>
+          </div>
+          <div id="activityCards" class="activity-grid"></div>
+          <div id="emptyActivities" class="empty-state" hidden>暂无活动，管理员可以在后台创建。</div>
+        </section>
+
         <section id="adminPanel" class="admin-section" hidden>
           <div class="section-heading">
-            <h2>掌柜后台</h2>
-            <p>开榜、封榜、查阅记录。</p>
+            <div>
+              <h2>掌柜后台</h2>
+              <p>创建活动、调整名册、查阅记录。</p>
+            </div>
+            <button id="newActivityBtn" class="ghost-button" type="button">新建活动</button>
           </div>
 
           <div class="admin-layout">
             <form id="activityForm" class="admin-form">
+              <input id="activityIdInput" type="hidden" />
+              <h3 id="activityFormTitle">编辑当前活动</h3>
               <label>
-                <span>榜单标题</span>
-                <input id="activityNameInput" maxlength="40" />
+                <span>活动标题</span>
+                <input id="activityNameInput" maxlength="60" placeholder="例如 周五大战招募" />
               </label>
               <label>
-                <span>副本名称</span>
-                <input id="instanceInput" maxlength="60" placeholder="例如 英雄某某殿" />
+                <span>副本难度</span>
+                <select id="difficultyInput">
+                  <option value="normal">普通</option>
+                  <option value="hero">英雄</option>
+                </select>
               </label>
               <label>
                 <span>活动类型</span>
                 <input id="typeInput" maxlength="40" placeholder="例如 开荒 / farm / 老板团" />
               </label>
               <label>
-                <span>开始时间</span>
+                <span>创建者</span>
+                <input id="creatorNameInput" maxlength="24" placeholder="例如 团长昵称" />
+              </label>
+              <label>
+                <span>创建者 QQ</span>
+                <input id="creatorQqInput" inputmode="numeric" maxlength="12" placeholder="可选" />
+              </label>
+              <label>
+                <span>活动时间</span>
                 <input id="startTimeInput" type="datetime-local" />
               </label>
               <label>
@@ -83,10 +99,10 @@
                 <input id="endTimeInput" type="datetime-local" />
               </label>
               <label>
-                <span>榜单状态</span>
+                <span>活动状态</span>
                 <select id="statusInput">
-                  <option value="open">开放报名</option>
-                  <option value="closed">关闭报名</option>
+                  <option value="active">进行中</option>
+                  <option value="ended">结束</option>
                 </select>
               </label>
               <div class="count-grid">
@@ -109,14 +125,14 @@
               </div>
               <div class="form-footer">
                 <span id="countTotal">合计 25 / 25</span>
-                <button class="primary-button" type="submit">保存榜单</button>
+                <button id="activitySubmitBtn" class="primary-button" type="submit">保存活动</button>
               </div>
             </form>
 
             <div class="admin-tools">
               <div class="tool-row">
                 <button id="refreshAuditBtn" class="ghost-button" type="button">刷新记录</button>
-                <button id="clearSignupsBtn" class="danger-button" type="button">清榜</button>
+                <button id="clearSignupsBtn" class="danger-button" type="button">清空当前报名</button>
                 <button id="adminLogoutBtn" class="ghost-button" type="button">退出后台</button>
               </div>
               <div class="audit-list" id="auditList" aria-live="polite"></div>
@@ -124,16 +140,33 @@
           </div>
         </section>
 
-        <section class="board-section" aria-label="报名位置">
-          <div class="section-heading board-heading">
-            <div>
-              <h2>二十五人名册</h2>
-              <p id="boardHint">登录后选择空位填写报名信息。</p>
+        <div id="detailPanel" class="detail-panel">
+          <section class="summary-band" aria-label="活动概览">
+            <div class="summary-main">
+              <div class="status-line">
+                <span id="statusPill" class="status-pill">进行中</span>
+                <span id="timeRange">时间待定</span>
+              </div>
+              <h2 id="activityTitle">25人副本报名</h2>
+              <p id="activityMeta">普通 · 创建者 管理员</p>
             </div>
-            <button id="refreshBtn" class="ghost-button" type="button">刷新</button>
-          </div>
-          <div id="board" class="board"></div>
-        </section>
+            <div class="summary-stats" id="summaryStats"></div>
+          </section>
+
+          <section class="board-section" aria-label="报名位置">
+            <div class="section-heading board-heading">
+              <div>
+                <h2>二十五人名册</h2>
+                <p id="boardHint">登录后选择空位填写报名信息。</p>
+              </div>
+              <div class="tool-row compact-tools">
+                <button id="backToListBtn" class="ghost-button" type="button">返回列表</button>
+                <button id="refreshBtn" class="ghost-button" type="button">刷新名册</button>
+              </div>
+            </div>
+            <div id="board" class="board"></div>
+          </section>
+        </div>
       </main>
     </div>
 

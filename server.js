@@ -5,8 +5,9 @@ const crypto = require("crypto");
 
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
-const DATA_DIR = path.join(__dirname, "data");
-const DB_PATH = path.join(DATA_DIR, "db.json");
+const DEFAULT_DATA_DIR = path.join(__dirname, "data");
+const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(DEFAULT_DATA_DIR, "db.json");
+const DATA_DIR = path.dirname(DB_PATH);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DRAFT_TTL_MS = 90 * 1000;
 
@@ -56,34 +57,53 @@ const roleOptions = {
 
 const adminTokens = new Set();
 
-function defaultDb() {
+function newActivity(overrides = {}) {
   const now = new Date().toISOString();
+  const id = overrides.id || crypto.randomUUID();
   return {
-    version: 2,
-    activity: {
-      name: "25人副本报名",
-      instanceName: "",
-      type: "普通活动",
-      startTime: "",
-      endTime: "",
-      status: "open",
-      counts: {
-        tank: 4,
-        healer: 5,
-        boss: 0,
-        dps: 16
-      },
-      updatedAt: now,
-      updatedBy: "system"
+    id,
+    title: sanitizeText(overrides.title || overrides.instanceName || overrides.name || "25人副本报名", 60),
+    difficulty: overrides.difficulty === "hero" ? "hero" : "normal",
+    type: sanitizeText(overrides.type || "普通活动", 40),
+    startTime: sanitizeText(overrides.startTime, 40),
+    endTime: sanitizeText(overrides.endTime, 40),
+    status: normalizeActivityStatus(overrides.status),
+    counts: {
+      tank: Number(overrides.counts?.tank ?? 4),
+      healer: Number(overrides.counts?.healer ?? 5),
+      boss: Number(overrides.counts?.boss ?? 0),
+      dps: Number(overrides.counts?.dps ?? 16)
     },
-    signups: {},
-    drafts: {},
+    creator: normalizeCreator(overrides.creator || { name: overrides.updatedBy || "管理员" }),
+    createdAt: overrides.createdAt || now,
+    updatedAt: overrides.updatedAt || now,
+    updatedBy: overrides.updatedBy || "system"
+  };
+}
+
+function defaultDb() {
+  const activity = newActivity({
+    title: "25人副本报名",
+    creator: { name: "system" },
+    updatedBy: "system"
+  });
+  return {
+    version: 3,
+    selectedActivityId: activity.id,
+    activities: [activity],
+    signups: {
+      [activity.id]: {}
+    },
+    drafts: {
+      [activity.id]: {}
+    },
     audit: [
       {
         id: crypto.randomUUID(),
-        at: now,
+        at: new Date().toISOString(),
         actor: "system",
         action: "init",
+        activityId: activity.id,
         target: "activity",
         before: null,
         after: null,
@@ -102,19 +122,53 @@ function ensureDb() {
   }
 }
 
+function isSlotSignupMap(value) {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return false;
+  }
+  const keys = Object.keys(value);
+  return keys.length === 0 || keys.some((key) => /^(tank|healer|boss|dps)-\d+$/.test(key));
+}
+
 function migrateDb(db) {
-  db.version = Math.max(Number(db.version || 1), 2);
-  db.signups = db.signups || {};
-  db.drafts = db.drafts || {};
-  db.audit = Array.isArray(db.audit) ? db.audit : [];
-  db.activity = db.activity || defaultDb().activity;
-  db.activity.counts = {
-    tank: Number(db.activity.counts?.tank ?? 4),
-    healer: Number(db.activity.counts?.healer ?? 5),
-    boss: Number(db.activity.counts?.boss ?? 0),
-    dps: Number(db.activity.counts?.dps ?? 16)
+  if (Array.isArray(db.activities) && db.version >= 3) {
+    db.activities = db.activities.map((activity) => newActivity(activity));
+    db.signups = db.signups || {};
+    db.drafts = db.drafts || {};
+    for (const activity of db.activities) {
+      db.signups[activity.id] = db.signups[activity.id] || {};
+      db.drafts[activity.id] = db.drafts[activity.id] || {};
+    }
+    db.audit = Array.isArray(db.audit) ? db.audit : [];
+    db.selectedActivityId = db.selectedActivityId || db.activities[0]?.id || "";
+    db.version = 3;
+    return db;
+  }
+
+  const legacyActivity = db.activity || {};
+  const activity = newActivity({
+    ...legacyActivity,
+    id: legacyActivity.id || crypto.randomUUID(),
+    title: legacyActivity.title || legacyActivity.instanceName || legacyActivity.name || "25人副本报名",
+    status: legacyActivity.status,
+    creator: legacyActivity.creator || { name: legacyActivity.updatedBy || "管理员" }
+  });
+
+  const legacySignups = isSlotSignupMap(db.signups) ? db.signups : {};
+  const legacyDrafts = isSlotSignupMap(db.drafts) ? db.drafts : {};
+
+  return {
+    version: 3,
+    selectedActivityId: activity.id,
+    activities: [activity],
+    signups: {
+      [activity.id]: legacySignups
+    },
+    drafts: {
+      [activity.id]: legacyDrafts
+    },
+    audit: Array.isArray(db.audit) ? db.audit : []
   };
-  return db;
 }
 
 function readDb() {
@@ -138,6 +192,7 @@ function appendAudit(db, entry) {
     at: new Date().toISOString(),
     actor: entry.actor,
     action: entry.action,
+    activityId: entry.activityId || "",
     target: entry.target,
     before: entry.before || null,
     after: entry.after || null,
@@ -219,9 +274,35 @@ function sanitizeQq(value) {
   return qq;
 }
 
+function normalizeCreator(input = {}) {
+  const qq = sanitizeQq(input.qq);
+  const name = sanitizeText(input.name || input.displayName || input.label || "", 24);
+  return {
+    name: name || (qq ? "" : "管理员"),
+    qq
+  };
+}
+
+function creatorLabel(creator = {}) {
+  if (creator.name && creator.qq) {
+    return `${creator.name}（QQ ${creator.qq}）`;
+  }
+  if (creator.name) {
+    return creator.name;
+  }
+  if (creator.qq) {
+    return `QQ ${creator.qq}`;
+  }
+  return "管理员";
+}
+
 function actorLabel(qq, displayName) {
   const name = sanitizeDisplayName(displayName);
   return name ? `${name}（QQ ${qq}）` : `QQ ${qq}`;
+}
+
+function normalizeActivityStatus(status) {
+  return status === "ended" || status === "closed" ? "ended" : "active";
 }
 
 function toNonNegativeInt(value) {
@@ -249,29 +330,51 @@ function buildSlots(activity) {
   return slots;
 }
 
-function cleanupExpiredDrafts(db) {
-  db.drafts = db.drafts || {};
-  const now = Date.now();
+function getActivity(db, activityId) {
+  const requested = sanitizeText(activityId, 80);
+  return (
+    db.activities.find((activity) => activity.id === requested) ||
+    db.activities.find((activity) => activity.id === db.selectedActivityId) ||
+    db.activities[0]
+  );
+}
+
+function getActivityMaps(db, activityId) {
+  db.signups[activityId] = db.signups[activityId] || {};
+  db.drafts[activityId] = db.drafts[activityId] || {};
+  return {
+    signups: db.signups[activityId],
+    drafts: db.drafts[activityId]
+  };
+}
+
+function cleanupExpiredDrafts(db, activityId) {
   let changed = false;
-  for (const [slotId, draft] of Object.entries(db.drafts)) {
-    const expiresAt = Date.parse(draft.expiresAt || "");
-    if (!expiresAt || expiresAt <= now || db.signups[slotId]) {
-      delete db.drafts[slotId];
-      changed = true;
+  const activityIds = activityId ? [activityId] : db.activities.map((activity) => activity.id);
+  const now = Date.now();
+  for (const id of activityIds) {
+    const maps = getActivityMaps(db, id);
+    for (const [slotId, draft] of Object.entries(maps.drafts)) {
+      const expiresAt = Date.parse(draft.expiresAt || "");
+      if (!expiresAt || expiresAt <= now || maps.signups[slotId]) {
+        delete maps.drafts[slotId];
+        changed = true;
+      }
     }
   }
   return changed;
 }
 
-function releaseDraft(db, slotId, qq, admin) {
-  const draft = db.drafts?.[slotId];
+function releaseDraft(db, activityId, slotId, qq, admin) {
+  const maps = getActivityMaps(db, activityId);
+  const draft = maps.drafts[slotId];
   if (!draft) {
     return false;
   }
   if (!admin && draft.qq !== qq) {
     return false;
   }
-  delete db.drafts[slotId];
+  delete maps.drafts[slotId];
   return true;
 }
 
@@ -292,15 +395,20 @@ function normalizeCounts(input) {
   return counts;
 }
 
-function normalizeActivity(body, currentActivity) {
+function normalizeActivity(body, currentActivity = {}) {
   return {
-    name: sanitizeText(body.name || currentActivity.name, 40) || "25人副本报名",
-    instanceName: sanitizeText(body.instanceName, 60),
+    ...currentActivity,
+    title: sanitizeText(body.title || body.name || currentActivity.title, 60) || "25人副本报名",
+    difficulty: body.difficulty === "hero" ? "hero" : "normal",
     type: sanitizeText(body.type || "普通活动", 40),
     startTime: sanitizeText(body.startTime, 40),
     endTime: sanitizeText(body.endTime, 40),
-    status: body.status === "closed" ? "closed" : "open",
-    counts: normalizeCounts(body.counts || currentActivity.counts)
+    status: normalizeActivityStatus(body.status),
+    counts: normalizeCounts(body.counts || currentActivity.counts || {}),
+    creator: normalizeCreator({
+      name: body.creatorName ?? currentActivity.creator?.name,
+      qq: body.creatorQq ?? currentActivity.creator?.qq
+    })
   };
 }
 
@@ -323,7 +431,7 @@ function normalizeSignup(body, role, qq) {
   }
 
   if (!signup.signupId) {
-    throw new Error("请填写报名 ID");
+    throw new Error("请填写游戏 ID");
   }
 
   if (role === "tank" || role === "healer") {
@@ -366,13 +474,32 @@ function getSlot(activity, slotId) {
   return buildSlots(activity).find((slot) => slot.id === slotId);
 }
 
-function publicState(db, req) {
+function activitySummary(db, activity) {
+  const maps = getActivityMaps(db, activity.id);
+  const total = buildSlots(activity).length;
+  const signed = Object.keys(maps.signups).length;
+  return {
+    ...activity,
+    difficultyLabel: activity.difficulty === "hero" ? "英雄" : "普通",
+    statusLabel: activity.status === "ended" ? "结束" : "进行中",
+    creatorLabel: creatorLabel(activity.creator),
+    signed,
+    total
+  };
+}
+
+function publicState(db, req, activityId) {
+  const activity = getActivity(db, activityId);
+  const maps = getActivityMaps(db, activity.id);
+  db.selectedActivityId = activity.id;
   return {
     ok: true,
-    activity: db.activity,
-    slots: buildSlots(db.activity),
-    signups: db.signups,
-    drafts: db.drafts || {},
+    selectedActivityId: activity.id,
+    activities: db.activities.map((item) => activitySummary(db, item)),
+    activity: activitySummary(db, activity),
+    slots: buildSlots(activity),
+    signups: maps.signups,
+    drafts: maps.drafts,
     options: {
       roles: roleLabels,
       specs: roleOptions
@@ -429,10 +556,11 @@ async function handleApi(req, res) {
   try {
     if (req.method === "GET" && url.pathname === "/api/state") {
       const db = readDb();
+      const activityId = url.searchParams.get("activityId") || "";
       if (cleanupExpiredDrafts(db)) {
         writeDb(db);
       }
-      sendJson(res, 200, publicState(db, req));
+      sendJson(res, 200, publicState(db, req, activityId));
       return;
     }
 
@@ -503,75 +631,33 @@ async function handleApi(req, res) {
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/api/drafts") {
+    if (req.method === "POST" && url.pathname === "/api/activities") {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
       const body = await readBody(req);
-      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
-      const displayName = sanitizeDisplayName(body.displayName);
-      if (!qq) {
-        sendError(res, 401, "请先输入 QQ 号登录");
-        return;
-      }
-
       const db = readDb();
-      cleanupExpiredDrafts(db);
-      if (db.activity.status === "closed" && !isAdmin(req)) {
-        sendError(res, 403, "当前活动已关闭报名");
-        return;
-      }
-
-      const slotId = sanitizeText(body.slotId, 30);
-      const slot = getSlot(db.activity, slotId);
-      if (!slot) {
-        sendError(res, 404, "位置不存在");
-        return;
-      }
-      if (db.signups[slotId]) {
-        sendError(res, 409, "这个位置已经填写完成");
-        return;
-      }
-
-      const existing = db.drafts[slotId];
-      if (existing && existing.qq !== qq && !isAdmin(req)) {
-        sendError(res, 409, `${actorLabel(existing.qq, existing.displayName)}正在填写中`);
-        return;
-      }
-
-      const now = new Date();
-      db.drafts[slotId] = {
-        slotId,
-        role: slot.role,
-        qq,
-        displayName,
-        startedAt: existing && existing.qq === qq ? existing.startedAt : now.toISOString(),
-        updatedAt: now.toISOString(),
-        expiresAt: new Date(now.getTime() + DRAFT_TTL_MS).toISOString()
-      };
+      const activity = normalizeActivity(body, newActivity({ creator: { name: "管理员" } }));
+      activity.id = crypto.randomUUID();
+      activity.createdAt = new Date().toISOString();
+      activity.updatedAt = activity.createdAt;
+      activity.updatedBy = "admin";
+      db.activities.unshift(activity);
+      db.signups[activity.id] = {};
+      db.drafts[activity.id] = {};
+      db.selectedActivityId = activity.id;
+      appendAudit(db, {
+        actor: "admin",
+        action: "activity:create",
+        activityId: activity.id,
+        target: activity.title,
+        before: null,
+        after: activity,
+        summary: `创建活动：${activity.title}`
+      });
       writeDb(db);
-      sendJson(res, 200, publicState(db, req));
-      return;
-    }
-
-    if (req.method === "DELETE" && url.pathname.startsWith("/api/drafts/")) {
-      const slotId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/drafts/", "")), 30);
-      const body = await readBody(req).catch(() => ({}));
-      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
-      const db = readDb();
-      cleanupExpiredDrafts(db);
-      releaseDraft(db, slotId, qq, isAdmin(req));
-      writeDb(db);
-      sendJson(res, 200, publicState(db, req));
-      return;
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/drafts/release") {
-      const body = await readBody(req);
-      const slotId = sanitizeText(body.slotId, 30);
-      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
-      const db = readDb();
-      cleanupExpiredDrafts(db);
-      releaseDraft(db, slotId, qq, isAdmin(req));
-      writeDb(db);
-      sendJson(res, 200, publicState(db, req));
+      sendJson(res, 200, publicState(db, req, activity.id));
       return;
     }
 
@@ -582,39 +668,51 @@ async function handleApi(req, res) {
       }
       const body = await readBody(req);
       const db = readDb();
-      cleanupExpiredDrafts(db);
-      const before = JSON.parse(JSON.stringify(db.activity));
-      const nextActivity = normalizeActivity(body, db.activity);
+      const activity = getActivity(db, body.activityId);
+      if (!activity) {
+        sendError(res, 404, "活动不存在");
+        return;
+      }
+      cleanupExpiredDrafts(db, activity.id);
+      const before = JSON.parse(JSON.stringify(activity));
+      const nextActivity = normalizeActivity(body, activity);
+      nextActivity.id = activity.id;
+      nextActivity.createdAt = activity.createdAt;
       nextActivity.updatedAt = new Date().toISOString();
       nextActivity.updatedBy = "admin";
 
+      const maps = getActivityMaps(db, activity.id);
       const nextSlotIds = new Set(buildSlots(nextActivity).map((slot) => slot.id));
       const removedSignups = [];
-      for (const slotId of Object.keys(db.signups)) {
+      for (const slotId of Object.keys(maps.signups)) {
         if (!nextSlotIds.has(slotId)) {
-          removedSignups.push({ slotId, signup: db.signups[slotId] });
-          delete db.signups[slotId];
+          removedSignups.push({ slotId, signup: maps.signups[slotId] });
+          delete maps.signups[slotId];
         }
       }
-      for (const slotId of Object.keys(db.drafts)) {
+      for (const slotId of Object.keys(maps.drafts)) {
         if (!nextSlotIds.has(slotId)) {
-          delete db.drafts[slotId];
+          delete maps.drafts[slotId];
         }
       }
 
-      db.activity = nextActivity;
+      const index = db.activities.findIndex((item) => item.id === activity.id);
+      db.activities[index] = nextActivity;
+      db.selectedActivityId = nextActivity.id;
       appendAudit(db, {
         actor: "admin",
         action: "activity:update",
-        target: "activity",
+        activityId: nextActivity.id,
+        target: nextActivity.title,
         before,
         after: nextActivity,
-        summary: `更新活动设置：${nextActivity.instanceName || nextActivity.name}`
+        summary: `更新活动：${nextActivity.title}`
       });
       for (const removed of removedSignups) {
         appendAudit(db, {
           actor: "admin",
           action: "signup:remove",
+          activityId: nextActivity.id,
           target: removed.slotId,
           before: removed.signup,
           after: null,
@@ -622,7 +720,7 @@ async function handleApi(req, res) {
         });
       }
       writeDb(db);
-      sendJson(res, 200, publicState(db, req));
+      sendJson(res, 200, publicState(db, req, nextActivity.id));
       return;
     }
 
@@ -633,19 +731,98 @@ async function handleApi(req, res) {
       }
       const body = await readBody(req);
       const db = readDb();
-      const before = db.signups;
-      db.signups = {};
-      db.drafts = {};
+      const activity = getActivity(db, body.activityId);
+      if (!activity) {
+        sendError(res, 404, "活动不存在");
+        return;
+      }
+      const maps = getActivityMaps(db, activity.id);
+      const before = maps.signups;
+      db.signups[activity.id] = {};
+      db.drafts[activity.id] = {};
       appendAudit(db, {
         actor: "admin",
         action: "activity:clear",
-        target: "signups",
+        activityId: activity.id,
+        target: activity.title,
         before,
         after: {},
         summary: sanitizeText(body.reason, 80) || "活动结束，清空全部报名"
       });
       writeDb(db);
-      sendJson(res, 200, publicState(db, req));
+      sendJson(res, 200, publicState(db, req, activity.id));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/drafts") {
+      const body = await readBody(req);
+      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
+      const displayName = sanitizeDisplayName(body.displayName);
+      if (!qq) {
+        sendError(res, 401, "请先输入 QQ 号登录");
+        return;
+      }
+
+      const db = readDb();
+      const activity = getActivity(db, body.activityId);
+      if (!activity) {
+        sendError(res, 404, "活动不存在");
+        return;
+      }
+      cleanupExpiredDrafts(db, activity.id);
+      const maps = getActivityMaps(db, activity.id);
+      if (activity.status === "ended" && !isAdmin(req)) {
+        sendError(res, 403, "当前活动已结束");
+        return;
+      }
+
+      const slotId = sanitizeText(body.slotId, 30);
+      const slot = getSlot(activity, slotId);
+      if (!slot) {
+        sendError(res, 404, "位置不存在");
+        return;
+      }
+      if (maps.signups[slotId]) {
+        sendError(res, 409, "这个位置已经填写完成");
+        return;
+      }
+
+      const existing = maps.drafts[slotId];
+      if (existing && existing.qq !== qq && !isAdmin(req)) {
+        sendError(res, 409, `${actorLabel(existing.qq, existing.displayName)}正在填写中`);
+        return;
+      }
+
+      const now = new Date();
+      maps.drafts[slotId] = {
+        activityId: activity.id,
+        slotId,
+        role: slot.role,
+        qq,
+        displayName,
+        startedAt: existing && existing.qq === qq ? existing.startedAt : now.toISOString(),
+        updatedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + DRAFT_TTL_MS).toISOString()
+      };
+      writeDb(db);
+      sendJson(res, 200, publicState(db, req, activity.id));
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/drafts/")) {
+      const slotId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/drafts/", "")), 30);
+      const body = await readBody(req).catch(() => ({}));
+      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
+      const db = readDb();
+      const activity = getActivity(db, body.activityId);
+      if (!activity) {
+        sendError(res, 404, "活动不存在");
+        return;
+      }
+      cleanupExpiredDrafts(db, activity.id);
+      releaseDraft(db, activity.id, slotId, qq, isAdmin(req));
+      writeDb(db);
+      sendJson(res, 200, publicState(db, req, activity.id));
       return;
     }
 
@@ -659,26 +836,32 @@ async function handleApi(req, res) {
       }
 
       const db = readDb();
-      cleanupExpiredDrafts(db);
-      if (db.activity.status === "closed" && !admin) {
-        sendError(res, 403, "当前活动已关闭报名");
+      const activity = getActivity(db, body.activityId);
+      if (!activity) {
+        sendError(res, 404, "活动不存在");
+        return;
+      }
+      cleanupExpiredDrafts(db, activity.id);
+      const maps = getActivityMaps(db, activity.id);
+      if (activity.status === "ended" && !admin) {
+        sendError(res, 403, "当前活动已结束");
         return;
       }
 
       const slotId = sanitizeText(body.slotId, 30);
-      const slot = getSlot(db.activity, slotId);
+      const slot = getSlot(activity, slotId);
       if (!slot) {
         sendError(res, 404, "位置不存在");
         return;
       }
 
-      const before = db.signups[slotId] || null;
+      const before = maps.signups[slotId] || null;
       if (before && !admin && before.qq !== qq) {
         sendError(res, 403, "只能修改自己的报名信息");
         return;
       }
 
-      const draft = db.drafts[slotId];
+      const draft = maps.drafts[slotId];
       if (draft && draft.qq !== qq && !admin) {
         sendError(res, 409, `${actorLabel(draft.qq, draft.displayName)}正在填写中`);
         return;
@@ -687,6 +870,7 @@ async function handleApi(req, res) {
       const normalized = normalizeSignup(body, slot.role, qq);
       const now = new Date().toISOString();
       const next = {
+        activityId: activity.id,
         slotId,
         role: slot.role,
         ...normalized,
@@ -694,58 +878,61 @@ async function handleApi(req, res) {
         updatedAt: now
       };
 
-      db.signups[slotId] = next;
-      delete db.drafts[slotId];
+      maps.signups[slotId] = next;
+      delete maps.drafts[slotId];
       appendAudit(db, {
         actor: admin ? "admin" : qq,
         action: before ? "signup:update" : "signup:create",
+        activityId: activity.id,
         target: slot.label,
         before,
         after: next,
-        summary: `${before ? "修改" : "填写"} ${slot.label}：${summarizeSignup(slot.role, next)}`
+        summary: `${before ? "修改" : "填写"} ${activity.title} / ${slot.label}：${summarizeSignup(slot.role, next)}`
       });
       writeDb(db);
-      sendJson(res, 200, publicState(db, req));
+      sendJson(res, 200, publicState(db, req, activity.id));
       return;
     }
 
     if (req.method === "DELETE" && url.pathname.startsWith("/api/signups/")) {
       const slotId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/signups/", "")), 30);
       const body = await readBody(req).catch(() => ({}));
-      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
       const admin = isAdmin(req);
-      if (!qq && !admin) {
-        sendError(res, 401, "请先输入 QQ 号登录");
-        return;
-      }
       if (!admin) {
         sendError(res, 403, "普通用户不能撤销已提交的报名，请联系管理员处理");
         return;
       }
 
       const db = readDb();
-      cleanupExpiredDrafts(db);
-      const slot = getSlot(db.activity, slotId);
+      const activity = getActivity(db, body.activityId);
+      if (!activity) {
+        sendError(res, 404, "活动不存在");
+        return;
+      }
+      cleanupExpiredDrafts(db, activity.id);
+      const maps = getActivityMaps(db, activity.id);
+      const slot = getSlot(activity, slotId);
       if (!slot) {
         sendError(res, 404, "位置不存在");
         return;
       }
-      const before = db.signups[slotId];
+      const before = maps.signups[slotId];
       if (!before) {
         sendError(res, 404, "这个位置还没有报名");
         return;
       }
-      delete db.signups[slotId];
+      delete maps.signups[slotId];
       appendAudit(db, {
         actor: "admin",
         action: "signup:delete",
+        activityId: activity.id,
         target: slot.label,
         before,
         after: null,
-        summary: `撤销 ${slot.label}：${summarizeSignup(slot.role, before)}`
+        summary: `撤销 ${activity.title} / ${slot.label}：${summarizeSignup(slot.role, before)}`
       });
       writeDb(db);
-      sendJson(res, 200, publicState(db, req));
+      sendJson(res, 200, publicState(db, req, activity.id));
       return;
     }
 
