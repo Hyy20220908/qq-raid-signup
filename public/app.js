@@ -105,13 +105,22 @@ async function api(path, options = {}) {
   return payload;
 }
 
-function showToast(message) {
+function showToast(message, type = "info") {
   elements.toast.textContent = message;
+  const inferredType =
+    type !== "info"
+      ? type
+      : /失败|错误|不能|需要|请先|关闭|已报名|不存在|只可|冲突|不正确/.test(message)
+        ? "error"
+        : /成功|已保存|已刷新|已登录|已退出|已清空|已登出|已撤销/.test(message)
+          ? "success"
+          : "info";
+  elements.toast.dataset.type = inferredType;
   elements.toast.hidden = false;
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => {
     elements.toast.hidden = true;
-  }, 2600);
+  }, 3600);
 }
 
 function formatDateTime(value) {
@@ -180,7 +189,7 @@ function renderUser() {
 
   if (appState) {
     elements.boardHint.textContent = currentUser
-      ? "选择空位填写报名信息；提交后普通用户不可修改，请确认无误再保存。"
+      ? "选择空位填写报名信息；已提交的自己报名可以继续修改。"
       : "登录后选择空位填写报名信息。";
   }
 }
@@ -310,7 +319,7 @@ function getSlotAction(signup, draft, owned, ownDraft) {
     if (appState.isAdmin) {
       return "管理员调整";
     }
-    return owned ? "已提交，需管理员修改" : "查看信息";
+    return owned ? "修改报名" : "查看信息";
   }
   if (draft && !ownDraft) {
     return `${escapeHtml(displayActor(draft))}正在填写中`;
@@ -326,25 +335,27 @@ function renderDraftBody(draft, ownDraft) {
 }
 
 function renderSignupBody(role, signup) {
-  const details = [];
-  details.push(`QQ ${escapeHtml(signup.qq)}`);
-  if (role !== "boss") {
-    details.push(escapeHtml(signup.spec));
+  const meta = [];
+  meta.push(`<span class="signup-chip">QQ ${escapeHtml(signup.qq)}</span>`);
+  if (role !== "boss" && signup.spec) {
+    meta.push(`<span class="signup-chip spec">${escapeHtml(signup.spec)}</span>`);
   }
-  details.push(`ID ${escapeHtml(signup.signupId)}`);
   if (role === "tank" || role === "healer") {
-    details.push(`增益 ${escapeHtml(signup.buffStacks)}`);
+    meta.push(`<span class="signup-chip">增益 ${escapeHtml(signup.buffStacks)}</span>`);
   }
   if (role === "dps") {
-    details.push(`装分 ${escapeHtml(signup.gearScore)}`);
+    meta.push(`<span class="signup-chip">装分 ${escapeHtml(signup.gearScore)}</span>`);
   }
   if (role === "boss" && signup.note) {
-    details.push(escapeHtml(signup.note));
+    meta.push(`<span class="signup-chip note">${escapeHtml(signup.note)}</span>`);
   }
 
   return `
-    <span class="slot-id">${escapeHtml(signup.signupId)}</span>
-    <span class="slot-detail">${details.join(" · ")}</span>
+    <span class="signup-summary">
+      <span class="signup-label">游戏 ID</span>
+      <span class="slot-id">${escapeHtml(signup.signupId)}</span>
+      <span class="slot-detail">${meta.join("")}</span>
+    </span>
   `;
 }
 
@@ -398,8 +409,8 @@ async function openSignupDialog(slotId) {
     return;
   }
 
-  if (signup && !appState.isAdmin) {
-    showToast(owned ? "报名提交后不能自行修改，请联系管理员。" : "已报名位置只可查看，不能修改。");
+  if (signup && !owned && !appState.isAdmin) {
+    showToast("已报名位置只可查看，不能修改。");
     return;
   }
 
@@ -434,7 +445,7 @@ async function openSignupDialog(slotId) {
   selectedSlot = slot;
   elements.slotIdInput.value = slot.id;
   elements.dialogRole.textContent = slot.label;
-  elements.dialogTitle.textContent = signup ? "管理员调整报名" : "填写报名";
+  elements.dialogTitle.textContent = signup ? (appState.isAdmin ? "管理员调整报名" : "修改报名") : "填写报名";
   elements.dialogQqInput.value = currentUser.displayName
     ? `${currentUser.displayName} · QQ ${currentUser.qq}`
     : currentUser.qq;

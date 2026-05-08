@@ -354,12 +354,12 @@ function summarizeSignup(role, signup) {
     return "空";
   }
   if (role === "tank" || role === "healer") {
-    return `QQ ${signup.qq}，${signup.spec}，ID ${signup.signupId}，增益 ${signup.buffStacks}`;
+    return `QQ ${signup.qq}，${signup.spec}，游戏ID ${signup.signupId}，增益 ${signup.buffStacks}`;
   }
   if (role === "dps") {
-    return `QQ ${signup.qq}，${signup.spec}，ID ${signup.signupId}，装分 ${signup.gearScore}`;
+    return `QQ ${signup.qq}，${signup.spec}，游戏ID ${signup.signupId}，装分 ${signup.gearScore}`;
   }
-  return `QQ ${signup.qq}，ID ${signup.signupId}${signup.note ? `，备注 ${signup.note}` : ""}`;
+  return `QQ ${signup.qq}，游戏ID ${signup.signupId}${signup.note ? `，备注 ${signup.note}` : ""}`;
 }
 
 function getSlot(activity, slotId) {
@@ -673,8 +673,8 @@ async function handleApi(req, res) {
       }
 
       const before = db.signups[slotId] || null;
-      if (before && !admin) {
-        sendError(res, 403, "报名提交后普通用户不能修改，请联系管理员处理");
+      if (before && !admin && before.qq !== qq) {
+        sendError(res, 403, "只能修改自己的报名信息");
         return;
       }
 
