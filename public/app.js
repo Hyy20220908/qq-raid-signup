@@ -9,6 +9,9 @@ const roleLabels = {
 let appState = null;
 let currentUser = loadUser();
 let selectedSlot = null;
+let draftHeartbeat = null;
+let refreshTimer = null;
+let auditLoadedOnce = false;
 
 const elements = {
   activitySubtitle: document.querySelector("#activitySubtitle"),
@@ -23,6 +26,7 @@ const elements = {
   loginPanel: document.querySelector("#loginPanel"),
   loginForm: document.querySelector("#loginForm"),
   qqInput: document.querySelector("#qqInput"),
+  displayNameInput: document.querySelector("#displayNameInput"),
   adminPanel: document.querySelector("#adminPanel"),
   activityForm: document.querySelector("#activityForm"),
   activityNameInput: document.querySelector("#activityNameInput"),
@@ -145,9 +149,26 @@ function signedCount(role) {
   return appState.slots.filter((slot) => slot.role === role && appState.signups[slot.id]).length;
 }
 
+function draftingCount(role) {
+  return appState.slots.filter((slot) => slot.role === role && appState.drafts?.[slot.id]).length;
+}
+
+function displayActor(actor) {
+  if (!actor) {
+    return "";
+  }
+  return actor.displayName ? `${actor.displayName}（QQ ${actor.qq}）` : `QQ ${actor.qq}`;
+}
+
+function isOwnDraft(draft) {
+  return Boolean(currentUser && draft && draft.qq === currentUser.qq);
+}
+
 function renderUser() {
   if (currentUser) {
-    elements.userBadge.textContent = `QQ ${currentUser.qq}`;
+    elements.userBadge.textContent = currentUser.displayName
+      ? `${currentUser.displayName} · QQ ${currentUser.qq}`
+      : `QQ ${currentUser.qq}`;
     elements.userBadge.hidden = false;
     elements.logoutBtn.hidden = false;
     elements.loginPanel.hidden = true;
@@ -159,7 +180,7 @@ function renderUser() {
 
   if (appState) {
     elements.boardHint.textContent = currentUser
-      ? "选择空位填写报名信息，也可以修改或撤销自己的报名。"
+      ? "选择空位填写报名信息；提交后普通用户不可修改，请确认无误再保存。"
       : "登录后选择空位填写报名信息。";
   }
 }
@@ -176,42 +197,52 @@ function renderSummary() {
   elements.activityTitle.textContent = title;
   elements.activityMeta.textContent = `${activity.name || "25人副本报名"} · ${activity.type || "普通活动"}`;
   elements.timeRange.textContent = timeText;
-  elements.statusPill.textContent = activity.status === "closed" ? "关闭报名" : "开放报名";
+  elements.statusPill.textContent = activity.status === "closed" ? "封榜" : "开榜";
   elements.statusPill.className = `status-pill ${activity.status === "closed" ? "closed" : "open"}`;
 
   elements.summaryStats.innerHTML = roleOrder
     .map((role) => {
       const signed = signedCount(role);
+      const drafting = draftingCount(role);
       const total = countRole(role);
       return `
-        <div class="stat">
+        <div class="stat ${role}">
           <strong>${signed}/${total}</strong>
-          <span>${roleLabels[role]} 已报名</span>
+          <span>${roleLabels[role]} 已定 · ${drafting} 填写中</span>
         </div>
       `;
     })
     .join("");
 }
 
-function renderAdminPanel() {
+function renderAdminPanel(options = {}) {
   elements.adminPanel.hidden = !appState.isAdmin;
   if (!appState.isAdmin) {
+    auditLoadedOnce = false;
     return;
   }
 
-  const activity = appState.activity;
-  elements.activityNameInput.value = activity.name || "";
-  elements.instanceInput.value = activity.instanceName || "";
-  elements.typeInput.value = activity.type || "";
-  elements.startTimeInput.value = toLocalInputValue(activity.startTime);
-  elements.endTimeInput.value = toLocalInputValue(activity.endTime);
-  elements.statusInput.value = activity.status || "open";
-  elements.tankCountInput.value = activity.counts.tank;
-  elements.healerCountInput.value = activity.counts.healer;
-  elements.bossCountInput.value = activity.counts.boss;
-  elements.dpsCountInput.value = activity.counts.dps;
-  updateCountTotal();
-  loadAudit();
+  const shouldPreserveForm =
+    options.preserveAdminForm || elements.activityForm.contains(document.activeElement);
+  if (!shouldPreserveForm) {
+    const activity = appState.activity;
+    elements.activityNameInput.value = activity.name || "";
+    elements.instanceInput.value = activity.instanceName || "";
+    elements.typeInput.value = activity.type || "";
+    elements.startTimeInput.value = toLocalInputValue(activity.startTime);
+    elements.endTimeInput.value = toLocalInputValue(activity.endTime);
+    elements.statusInput.value = activity.status || "open";
+    elements.tankCountInput.value = activity.counts.tank;
+    elements.healerCountInput.value = activity.counts.healer;
+    elements.bossCountInput.value = activity.counts.boss;
+    elements.dpsCountInput.value = activity.counts.dps;
+    updateCountTotal();
+  }
+
+  if (!options.skipAudit && !auditLoadedOnce) {
+    auditLoadedOnce = true;
+    loadAudit();
+  }
 }
 
 function renderBoard() {
@@ -225,12 +256,13 @@ function renderBoard() {
     .map((role) => {
       const total = grouped[role].length;
       const signed = grouped[role].filter((slot) => appState.signups[slot.id]).length;
+      const drafting = grouped[role].filter((slot) => appState.drafts?.[slot.id]).length;
       const cards = grouped[role].map(renderSlot).join("");
       return `
         <div class="role-group">
-          <div class="role-head">
+          <div class="role-head ${role}">
             <h3>${roleLabels[role]}</h3>
-            <span>${signed}/${total} 已报名</span>
+            <span>${signed}/${total} 已定 · ${drafting} 填写中</span>
           </div>
           <div class="slot-grid">${cards}</div>
         </div>
@@ -245,20 +277,21 @@ function renderBoard() {
 
 function renderSlot(slot) {
   const signup = appState.signups[slot.id];
+  const draft = appState.drafts?.[slot.id];
   const owned = currentUser && signup && signup.qq === currentUser.qq;
   const occupied = Boolean(signup);
-  const status = occupied ? (owned ? "我的报名" : "已占用") : "空位";
-  const body = signup ? renderSignupBody(slot.role, signup) : `<div class="slot-empty">点击填写这个位置</div>`;
-  const action = !currentUser
-    ? "登录后可报名"
-    : occupied && !owned
-      ? "查看信息"
-      : owned
-        ? "修改报名"
-        : "填写报名";
+  const drafting = Boolean(!signup && draft);
+  const ownDraft = isOwnDraft(draft);
+  const status = occupied ? (owned ? "我的报名" : "已定") : drafting ? "填写中" : "空位";
+  const action = getSlotAction(signup, draft, owned, ownDraft);
+  const body = signup
+    ? renderSignupBody(slot.role, signup)
+    : drafting
+      ? renderDraftBody(draft, ownDraft)
+      : `<span class="slot-empty">虚席以待</span>`;
 
   return `
-    <button class="slot-card ${occupied ? "occupied" : ""} ${owned ? "owned" : ""}" type="button" data-slot-id="${slot.id}">
+    <button class="slot-card ${occupied ? "occupied" : ""} ${owned ? "owned" : ""} ${drafting ? "drafting" : ""} ${ownDraft ? "own-draft" : ""}" type="button" data-slot-id="${slot.id}">
       <span class="slot-top">
         <span class="slot-tag ${slot.role}">${slot.label}</span>
         <span class="slot-status">${status}</span>
@@ -266,6 +299,29 @@ function renderSlot(slot) {
       <span class="slot-body">${body}</span>
       <span class="slot-action">${action}</span>
     </button>
+  `;
+}
+
+function getSlotAction(signup, draft, owned, ownDraft) {
+  if (!currentUser) {
+    return "登录后可报名";
+  }
+  if (signup) {
+    if (appState.isAdmin) {
+      return "管理员调整";
+    }
+    return owned ? "已提交，需管理员修改" : "查看信息";
+  }
+  if (draft && !ownDraft) {
+    return `${escapeHtml(displayActor(draft))}正在填写中`;
+  }
+  return ownDraft ? "继续填写" : "填写报名";
+}
+
+function renderDraftBody(draft, ownDraft) {
+  return `
+    <span class="slot-id">${ownDraft ? "你正在填写" : "填写中"}</span>
+    <span class="slot-detail">${escapeHtml(displayActor(draft))}正在填写中，稍后自动释放。</span>
   `;
 }
 
@@ -301,16 +357,16 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function renderAll() {
+function renderAll(options = {}) {
   renderUser();
   renderSummary();
-  renderAdminPanel();
+  renderAdminPanel(options);
   renderBoard();
 }
 
-async function loadState() {
+async function loadState(options = {}) {
   appState = await api("/api/state");
-  renderAll();
+  renderAll(options);
 }
 
 function updateCountTotal() {
@@ -329,10 +385,12 @@ function slotById(slotId) {
   return appState.slots.find((slot) => slot.id === slotId);
 }
 
-function openSignupDialog(slotId) {
+async function openSignupDialog(slotId) {
   const slot = slotById(slotId);
   const signup = appState.signups[slotId];
+  const draft = appState.drafts?.[slotId];
   const owned = currentUser && signup && signup.qq === currentUser.qq;
+  const ownDraft = isOwnDraft(draft);
 
   if (!currentUser) {
     showToast("请先输入 QQ 号登录");
@@ -340,8 +398,13 @@ function openSignupDialog(slotId) {
     return;
   }
 
-  if (signup && !owned && !appState.isAdmin) {
-    showToast("这个位置已经被其他群友报名");
+  if (signup && !appState.isAdmin) {
+    showToast(owned ? "报名提交后不能自行修改，请联系管理员。" : "已报名位置只可查看，不能修改。");
+    return;
+  }
+
+  if (draft && !ownDraft && !appState.isAdmin) {
+    showToast(`${displayActor(draft)}正在填写中`);
     return;
   }
 
@@ -350,16 +413,36 @@ function openSignupDialog(slotId) {
     return;
   }
 
+  try {
+    if (!signup) {
+      appState = await api("/api/drafts", {
+        method: "POST",
+        body: JSON.stringify({
+          qq: currentUser.qq,
+          displayName: currentUser.displayName || "",
+          slotId
+        })
+      });
+      renderAll({ preserveAdminForm: true, skipAudit: true });
+    }
+  } catch (error) {
+    await loadState({ preserveAdminForm: true, skipAudit: true }).catch(() => {});
+    showToast(error.message);
+    return;
+  }
+
   selectedSlot = slot;
   elements.slotIdInput.value = slot.id;
   elements.dialogRole.textContent = slot.label;
-  elements.dialogTitle.textContent = signup ? "修改报名" : "填写报名";
-  elements.dialogQqInput.value = currentUser.qq;
+  elements.dialogTitle.textContent = signup ? "管理员调整报名" : "填写报名";
+  elements.dialogQqInput.value = currentUser.displayName
+    ? `${currentUser.displayName} · QQ ${currentUser.qq}`
+    : currentUser.qq;
   elements.signupIdInput.value = signup?.signupId || "";
   elements.buffStacksInput.value = signup?.buffStacks || "0";
   elements.gearScoreInput.value = signup?.gearScore || "";
   elements.noteInput.value = signup?.note || "";
-  elements.deleteSignupBtn.hidden = !signup;
+  elements.deleteSignupBtn.hidden = !signup || !appState.isAdmin;
 
   renderSpecOptions(slot.role, signup);
   elements.specField.hidden = slot.role === "boss";
@@ -367,6 +450,7 @@ function openSignupDialog(slotId) {
   elements.gearField.hidden = slot.role !== "dps";
   elements.noteField.hidden = slot.role !== "boss";
 
+  startDraftHeartbeat(slot.id);
   elements.signupDialog.showModal();
 }
 
@@ -376,6 +460,66 @@ function renderSpecOptions(role, signup) {
     .map((spec) => `<option value="${escapeHtml(spec)}">${escapeHtml(spec)}</option>`)
     .join("");
   elements.specInput.value = signup?.spec || specs[0] || "";
+}
+
+function startDraftHeartbeat(slotId) {
+  stopDraftHeartbeat();
+  const signup = appState.signups[slotId];
+  if (signup) {
+    return;
+  }
+  draftHeartbeat = setInterval(async () => {
+    if (!currentUser || !elements.signupDialog.open) {
+      stopDraftHeartbeat();
+      return;
+    }
+    try {
+      appState = await api("/api/drafts", {
+        method: "POST",
+        body: JSON.stringify({
+          qq: currentUser.qq,
+          displayName: currentUser.displayName || "",
+          slotId
+        })
+      });
+      renderAll({ preserveAdminForm: true, skipAudit: true });
+    } catch (error) {
+      stopDraftHeartbeat();
+      showToast(error.message);
+    }
+  }, 30000);
+}
+
+function stopDraftHeartbeat() {
+  if (draftHeartbeat) {
+    clearInterval(draftHeartbeat);
+    draftHeartbeat = null;
+  }
+}
+
+async function releaseSelectedDraft() {
+  stopDraftHeartbeat();
+  if (!selectedSlot || !currentUser) {
+    selectedSlot = null;
+    return;
+  }
+  const slotId = selectedSlot.id;
+  const draft = appState?.drafts?.[slotId];
+  const signup = appState?.signups?.[slotId];
+  selectedSlot = null;
+  if (!draft || signup || draft.qq !== currentUser.qq) {
+    return;
+  }
+
+  try {
+    appState = await api(`/api/drafts/${encodeURIComponent(slotId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ qq: currentUser.qq })
+    });
+    renderAll({ preserveAdminForm: true, skipAudit: true });
+  } catch {
+    await loadState({ preserveAdminForm: true, skipAudit: true }).catch(() => {});
+  }
 }
 
 async function submitSignup(event) {
@@ -399,6 +543,8 @@ async function submitSignup(event) {
       method: "POST",
       body: JSON.stringify(body)
     });
+    stopDraftHeartbeat();
+    selectedSlot = null;
     elements.signupDialog.close();
     renderAll();
     showToast("报名已保存");
@@ -408,7 +554,7 @@ async function submitSignup(event) {
 }
 
 async function deleteSignup() {
-  if (!selectedSlot || !currentUser) {
+  if (!selectedSlot || !appState?.isAdmin) {
     return;
   }
 
@@ -419,8 +565,10 @@ async function deleteSignup() {
   try {
     appState = await api(`/api/signups/${encodeURIComponent(selectedSlot.id)}`, {
       method: "DELETE",
-      body: JSON.stringify({ qq: currentUser.qq })
+      body: JSON.stringify({ qq: currentUser?.qq || "" })
     });
+    stopDraftHeartbeat();
+    selectedSlot = null;
     elements.signupDialog.close();
     renderAll();
     showToast("报名已撤销");
@@ -434,7 +582,10 @@ async function submitLogin(event) {
   try {
     const payload = await api("/api/login", {
       method: "POST",
-      body: JSON.stringify({ qq: elements.qqInput.value })
+      body: JSON.stringify({
+        qq: elements.qqInput.value,
+        displayName: elements.displayNameInput?.value || ""
+      })
     });
     saveUser(payload.user);
     renderAll();
@@ -453,6 +604,7 @@ async function submitAdminLogin(event) {
     });
     elements.adminDialog.close();
     elements.adminPasswordInput.value = "";
+    auditLoadedOnce = false;
     await loadState();
     showToast("管理员已登录");
   } catch (error) {
@@ -482,6 +634,7 @@ async function submitActivity(event) {
         counts
       })
     });
+    auditLoadedOnce = false;
     renderAll();
     showToast("活动设置已保存");
   } catch (error) {
@@ -528,6 +681,7 @@ async function clearSignups() {
       method: "POST",
       body: JSON.stringify({ reason: "活动结束，清空全部报名" })
     });
+    auditLoadedOnce = false;
     renderAll();
     showToast("报名已清空");
   } catch (error) {
@@ -538,6 +692,7 @@ async function clearSignups() {
 async function adminLogout() {
   try {
     await api("/api/admin/logout", { method: "POST", body: "{}" });
+    auditLoadedOnce = false;
     await loadState();
     showToast("已退出后台");
   } catch (error) {
@@ -545,14 +700,31 @@ async function adminLogout() {
   }
 }
 
+function startAutoRefresh() {
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(async () => {
+    if (document.hidden) {
+      return;
+    }
+    try {
+      await loadState({ preserveAdminForm: true, skipAudit: true });
+    } catch {
+      // 下一轮刷新会继续尝试。
+    }
+  }, 5000);
+}
+
 elements.loginForm.addEventListener("submit", submitLogin);
-elements.logoutBtn.addEventListener("click", () => {
+elements.logoutBtn.addEventListener("click", async () => {
+  if (selectedSlot) {
+    await releaseSelectedDraft();
+  }
   saveUser(null);
   renderAll();
   showToast("已登出");
 });
 elements.refreshBtn.addEventListener("click", async () => {
-  await loadState();
+  await loadState({ skipAudit: true });
   showToast("已刷新");
 });
 elements.adminToggleBtn.addEventListener("click", () => {
@@ -563,6 +735,7 @@ elements.adminToggleBtn.addEventListener("click", () => {
   }
 });
 elements.closeDialogBtn.addEventListener("click", () => elements.signupDialog.close());
+elements.signupDialog.addEventListener("close", releaseSelectedDraft);
 elements.closeAdminDialogBtn.addEventListener("click", () => elements.adminDialog.close());
 elements.signupForm.addEventListener("submit", submitSignup);
 elements.deleteSignupBtn.addEventListener("click", deleteSignup);
@@ -581,6 +754,8 @@ for (const input of [
   input.addEventListener("input", updateCountTotal);
 }
 
-loadState().catch((error) => {
-  showToast(error.message);
-});
+loadState()
+  .then(startAutoRefresh)
+  .catch((error) => {
+    showToast(error.message);
+  });

@@ -8,6 +8,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const DATA_DIR = path.join(__dirname, "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
+const DRAFT_TTL_MS = 90 * 1000;
 
 const tankSpecs = ["明尊", "洗髓", "铁牢", "铁骨"];
 const healerSpecs = ["云裳", "补天", "离经", "相知", "灵素"];
@@ -58,7 +59,7 @@ const adminTokens = new Set();
 function defaultDb() {
   const now = new Date().toISOString();
   return {
-    version: 1,
+    version: 2,
     activity: {
       name: "25人副本报名",
       instanceName: "",
@@ -76,6 +77,7 @@ function defaultDb() {
       updatedBy: "system"
     },
     signups: {},
+    drafts: {},
     audit: [
       {
         id: crypto.randomUUID(),
@@ -100,10 +102,25 @@ function ensureDb() {
   }
 }
 
+function migrateDb(db) {
+  db.version = Math.max(Number(db.version || 1), 2);
+  db.signups = db.signups || {};
+  db.drafts = db.drafts || {};
+  db.audit = Array.isArray(db.audit) ? db.audit : [];
+  db.activity = db.activity || defaultDb().activity;
+  db.activity.counts = {
+    tank: Number(db.activity.counts?.tank ?? 4),
+    healer: Number(db.activity.counts?.healer ?? 5),
+    boss: Number(db.activity.counts?.boss ?? 0),
+    dps: Number(db.activity.counts?.dps ?? 16)
+  };
+  return db;
+}
+
 function readDb() {
   ensureDb();
   const raw = fs.readFileSync(DB_PATH, "utf8");
-  return JSON.parse(raw);
+  return migrateDb(JSON.parse(raw));
 }
 
 function writeDb(db) {
@@ -190,12 +207,21 @@ function sanitizeText(value, maxLength = 80) {
   return String(value || "").trim().slice(0, maxLength);
 }
 
+function sanitizeDisplayName(value) {
+  return sanitizeText(value, 24);
+}
+
 function sanitizeQq(value) {
   const qq = String(value || "").trim();
   if (!/^\d{5,12}$/.test(qq)) {
     return "";
   }
   return qq;
+}
+
+function actorLabel(qq, displayName) {
+  const name = sanitizeDisplayName(displayName);
+  return name ? `${name}（QQ ${qq}）` : `QQ ${qq}`;
 }
 
 function toNonNegativeInt(value) {
@@ -221,6 +247,32 @@ function buildSlots(activity) {
     }
   }
   return slots;
+}
+
+function cleanupExpiredDrafts(db) {
+  db.drafts = db.drafts || {};
+  const now = Date.now();
+  let changed = false;
+  for (const [slotId, draft] of Object.entries(db.drafts)) {
+    const expiresAt = Date.parse(draft.expiresAt || "");
+    if (!expiresAt || expiresAt <= now || db.signups[slotId]) {
+      delete db.drafts[slotId];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function releaseDraft(db, slotId, qq, admin) {
+  const draft = db.drafts?.[slotId];
+  if (!draft) {
+    return false;
+  }
+  if (!admin && draft.qq !== qq) {
+    return false;
+  }
+  delete db.drafts[slotId];
+  return true;
 }
 
 function normalizeCounts(input) {
@@ -320,6 +372,7 @@ function publicState(db, req) {
     activity: db.activity,
     slots: buildSlots(db.activity),
     signups: db.signups,
+    drafts: db.drafts || {},
     options: {
       roles: roleLabels,
       specs: roleOptions
@@ -376,6 +429,9 @@ async function handleApi(req, res) {
   try {
     if (req.method === "GET" && url.pathname === "/api/state") {
       const db = readDb();
+      if (cleanupExpiredDrafts(db)) {
+        writeDb(db);
+      }
       sendJson(res, 200, publicState(db, req));
       return;
     }
@@ -383,6 +439,7 @@ async function handleApi(req, res) {
     if (req.method === "POST" && url.pathname === "/api/login") {
       const body = await readBody(req);
       const qq = sanitizeQq(body.qq);
+      const displayName = sanitizeDisplayName(body.displayName);
       if (!qq) {
         sendError(res, 400, "请输入 5 到 12 位数字 QQ 号");
         return;
@@ -390,7 +447,7 @@ async function handleApi(req, res) {
       sendJson(
         res,
         200,
-        { ok: true, user: { qq } },
+        { ok: true, user: { qq, displayName } },
         {
           "Set-Cookie": `qqUser=${encodeURIComponent(qq)}; Path=/; SameSite=Lax; Max-Age=31536000`
         }
@@ -439,7 +496,82 @@ async function handleApi(req, res) {
         return;
       }
       const db = readDb();
+      if (cleanupExpiredDrafts(db)) {
+        writeDb(db);
+      }
       sendJson(res, 200, { ok: true, audit: db.audit.slice(0, 500) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/drafts") {
+      const body = await readBody(req);
+      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
+      const displayName = sanitizeDisplayName(body.displayName);
+      if (!qq) {
+        sendError(res, 401, "请先输入 QQ 号登录");
+        return;
+      }
+
+      const db = readDb();
+      cleanupExpiredDrafts(db);
+      if (db.activity.status === "closed" && !isAdmin(req)) {
+        sendError(res, 403, "当前活动已关闭报名");
+        return;
+      }
+
+      const slotId = sanitizeText(body.slotId, 30);
+      const slot = getSlot(db.activity, slotId);
+      if (!slot) {
+        sendError(res, 404, "位置不存在");
+        return;
+      }
+      if (db.signups[slotId]) {
+        sendError(res, 409, "这个位置已经填写完成");
+        return;
+      }
+
+      const existing = db.drafts[slotId];
+      if (existing && existing.qq !== qq && !isAdmin(req)) {
+        sendError(res, 409, `${actorLabel(existing.qq, existing.displayName)}正在填写中`);
+        return;
+      }
+
+      const now = new Date();
+      db.drafts[slotId] = {
+        slotId,
+        role: slot.role,
+        qq,
+        displayName,
+        startedAt: existing && existing.qq === qq ? existing.startedAt : now.toISOString(),
+        updatedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + DRAFT_TTL_MS).toISOString()
+      };
+      writeDb(db);
+      sendJson(res, 200, publicState(db, req));
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/drafts/")) {
+      const slotId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/drafts/", "")), 30);
+      const body = await readBody(req).catch(() => ({}));
+      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
+      const db = readDb();
+      cleanupExpiredDrafts(db);
+      releaseDraft(db, slotId, qq, isAdmin(req));
+      writeDb(db);
+      sendJson(res, 200, publicState(db, req));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/drafts/release") {
+      const body = await readBody(req);
+      const slotId = sanitizeText(body.slotId, 30);
+      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
+      const db = readDb();
+      cleanupExpiredDrafts(db);
+      releaseDraft(db, slotId, qq, isAdmin(req));
+      writeDb(db);
+      sendJson(res, 200, publicState(db, req));
       return;
     }
 
@@ -450,6 +582,7 @@ async function handleApi(req, res) {
       }
       const body = await readBody(req);
       const db = readDb();
+      cleanupExpiredDrafts(db);
       const before = JSON.parse(JSON.stringify(db.activity));
       const nextActivity = normalizeActivity(body, db.activity);
       nextActivity.updatedAt = new Date().toISOString();
@@ -461,6 +594,11 @@ async function handleApi(req, res) {
         if (!nextSlotIds.has(slotId)) {
           removedSignups.push({ slotId, signup: db.signups[slotId] });
           delete db.signups[slotId];
+        }
+      }
+      for (const slotId of Object.keys(db.drafts)) {
+        if (!nextSlotIds.has(slotId)) {
+          delete db.drafts[slotId];
         }
       }
 
@@ -497,6 +635,7 @@ async function handleApi(req, res) {
       const db = readDb();
       const before = db.signups;
       db.signups = {};
+      db.drafts = {};
       appendAudit(db, {
         actor: "admin",
         action: "activity:clear",
@@ -513,13 +652,15 @@ async function handleApi(req, res) {
     if (req.method === "POST" && url.pathname === "/api/signups") {
       const body = await readBody(req);
       const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
+      const admin = isAdmin(req);
       if (!qq) {
         sendError(res, 401, "请先输入 QQ 号登录");
         return;
       }
 
       const db = readDb();
-      if (db.activity.status === "closed" && !isAdmin(req)) {
+      cleanupExpiredDrafts(db);
+      if (db.activity.status === "closed" && !admin) {
         sendError(res, 403, "当前活动已关闭报名");
         return;
       }
@@ -532,8 +673,14 @@ async function handleApi(req, res) {
       }
 
       const before = db.signups[slotId] || null;
-      if (before && before.qq !== qq && !isAdmin(req)) {
-        sendError(res, 409, "这个位置已经被其他群友报名");
+      if (before && !admin) {
+        sendError(res, 403, "报名提交后普通用户不能修改，请联系管理员处理");
+        return;
+      }
+
+      const draft = db.drafts[slotId];
+      if (draft && draft.qq !== qq && !admin) {
+        sendError(res, 409, `${actorLabel(draft.qq, draft.displayName)}正在填写中`);
         return;
       }
 
@@ -548,8 +695,9 @@ async function handleApi(req, res) {
       };
 
       db.signups[slotId] = next;
+      delete db.drafts[slotId];
       appendAudit(db, {
-        actor: qq,
+        actor: admin ? "admin" : qq,
         action: before ? "signup:update" : "signup:create",
         target: slot.label,
         before,
@@ -565,12 +713,18 @@ async function handleApi(req, res) {
       const slotId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/signups/", "")), 30);
       const body = await readBody(req).catch(() => ({}));
       const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
-      if (!qq && !isAdmin(req)) {
+      const admin = isAdmin(req);
+      if (!qq && !admin) {
         sendError(res, 401, "请先输入 QQ 号登录");
+        return;
+      }
+      if (!admin) {
+        sendError(res, 403, "普通用户不能撤销已提交的报名，请联系管理员处理");
         return;
       }
 
       const db = readDb();
+      cleanupExpiredDrafts(db);
       const slot = getSlot(db.activity, slotId);
       if (!slot) {
         sendError(res, 404, "位置不存在");
@@ -581,13 +735,9 @@ async function handleApi(req, res) {
         sendError(res, 404, "这个位置还没有报名");
         return;
       }
-      if (before.qq !== qq && !isAdmin(req)) {
-        sendError(res, 403, "只能撤销自己的报名");
-        return;
-      }
       delete db.signups[slotId];
       appendAudit(db, {
-        actor: isAdmin(req) ? "admin" : qq,
+        actor: "admin",
         action: "signup:delete",
         target: slot.label,
         before,

@@ -12,14 +12,14 @@
         <div class="brand-block">
           <span class="brand-mark" aria-hidden="true">副</span>
           <div>
-            <h1>QQ群副本活动报名</h1>
+            <h1>团本召集令</h1>
             <p id="activitySubtitle">正在读取活动信息...</p>
           </div>
         </div>
         <div class="user-area">
           <div id="userBadge" class="user-badge" hidden></div>
           <button id="logoutBtn" class="ghost-button" type="button" hidden>登出</button>
-          <button id="adminToggleBtn" class="ghost-button" type="button">管理员</button>
+          <button id="adminToggleBtn" class="ghost-button" type="button">后台</button>
         </div>
       </header>
 
@@ -38,13 +38,17 @@
 
         <section id="loginPanel" class="work-section" aria-label="QQ 登录">
           <div class="section-heading">
-            <h2>群友登录</h2>
-            <p>输入 QQ 号即可报名，网页会记住你的登录状态。</p>
+            <h2>入册</h2>
+            <p>QQ 号必填，群名可选。</p>
           </div>
           <form id="loginForm" class="inline-form">
             <label>
               <span>QQ 号</span>
               <input id="qqInput" name="qq" inputmode="numeric" autocomplete="username" placeholder="例如 123456789" required />
+            </label>
+            <label>
+              <span>群名 / 昵称</span>
+              <input id="displayNameInput" name="displayName" maxlength="24" autocomplete="nickname" placeholder="可选" />
             </label>
             <button class="primary-button" type="submit">进入报名</button>
           </form>
@@ -52,14 +56,14 @@
 
         <section id="adminPanel" class="admin-section" hidden>
           <div class="section-heading">
-            <h2>管理员后台</h2>
-            <p>设置活动，查看填写和修改记录，活动结束后清空报名。</p>
+            <h2>掌柜后台</h2>
+            <p>开榜、封榜、查阅记录。</p>
           </div>
 
           <div class="admin-layout">
             <form id="activityForm" class="admin-form">
               <label>
-                <span>页面标题</span>
+                <span>榜单标题</span>
                 <input id="activityNameInput" maxlength="40" />
               </label>
               <label>
@@ -79,7 +83,7 @@
                 <input id="endTimeInput" type="datetime-local" />
               </label>
               <label>
-                <span>报名状态</span>
+                <span>榜单状态</span>
                 <select id="statusInput">
                   <option value="open">开放报名</option>
                   <option value="closed">关闭报名</option>
@@ -105,14 +109,14 @@
               </div>
               <div class="form-footer">
                 <span id="countTotal">合计 25 / 25</span>
-                <button class="primary-button" type="submit">保存活动设置</button>
+                <button class="primary-button" type="submit">保存榜单</button>
               </div>
             </form>
 
             <div class="admin-tools">
               <div class="tool-row">
                 <button id="refreshAuditBtn" class="ghost-button" type="button">刷新记录</button>
-                <button id="clearSignupsBtn" class="danger-button" type="button">清空报名</button>
+                <button id="clearSignupsBtn" class="danger-button" type="button">清榜</button>
                 <button id="adminLogoutBtn" class="ghost-button" type="button">退出后台</button>
               </div>
               <div class="audit-list" id="auditList" aria-live="polite"></div>
@@ -123,7 +127,7 @@
         <section class="board-section" aria-label="报名位置">
           <div class="section-heading board-heading">
             <div>
-              <h2>报名位置</h2>
+              <h2>二十五人名册</h2>
               <p id="boardHint">登录后选择空位填写报名信息。</p>
             </div>
             <button id="refreshBtn" class="ghost-button" type="button">刷新</button>
