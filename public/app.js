@@ -16,7 +16,7 @@ let auditLoadedOnce = false;
 let isCreatingActivity = false;
 
 const elements = {
-  activitySubtitle: document.querySelector("#activitySubtitle"),
+  // activitySubtitle was renamed to brandSubtitle in branding commit
   userBadge: document.querySelector("#userBadge"),
   logoutBtn: document.querySelector("#logoutBtn"),
   adminToggleBtn: document.querySelector("#adminToggleBtn"),
@@ -267,7 +267,7 @@ function renderSummary() {
   }
 
   elements.detailPanel.hidden = false;
-  elements.activitySubtitle.textContent = `${activity.difficultyLabel} · ${formatTimeRange(activity)}`;
+
   elements.activityTitle.textContent = activity.title || "25人副本报名";
   elements.activityMeta.textContent = `${activity.difficultyLabel} · ${activity.type || "普通活动"} · 创建者 ${activity.creatorLabel}`;
   elements.timeRange.textContent = formatTimeRange(activity);
