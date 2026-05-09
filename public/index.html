@@ -58,7 +58,7 @@
           <div class="section-heading">
             <div>
               <h2>掌柜后台</h2>
-              <p>创建活动、调整名册、查阅记录。</p>
+              <p>管理活动、调整名册。</p>
             </div>
             <button id="newActivityBtn" class="ghost-button" type="button">新建活动</button>
           </div>
@@ -128,26 +128,7 @@
             <div class="admin-tools">
               <div class="tool-row">
                 <button id="refreshAuditBtn" class="ghost-button" type="button">刷新记录</button>
-                <button id="clearSignupsBtn" class="danger-button" type="button">清空当前报名</button>
-              </div>
-              <div class="tool-row">
                 <button id="deleteActivityBtn" class="danger-button" type="button">删除当前活动</button>
-                <button id="changePasswordBtn" class="ghost-button" type="button">修改密码</button>
-                <button id="adminLogoutBtn" class="ghost-button" type="button">退出后台</button>
-              </div>
-              <div class="password-form" id="passwordForm" hidden>
-                <label>
-                  <span>新密码</span>
-                  <input id="newPasswordInput" type="password" autocomplete="new-password" placeholder="输入新密码" />
-                </label>
-                <label>
-                  <span>确认密码</span>
-                  <input id="confirmPasswordInput" type="password" autocomplete="new-password" placeholder="再次输入新密码" />
-                </label>
-                <div class="tool-row">
-                  <button id="submitPasswordBtn" class="primary-button" type="button">确认修改</button>
-                  <button id="cancelPasswordBtn" class="ghost-button" type="button">取消</button>
-                </div>
               </div>
               <div class="audit-list" id="auditList" aria-live="polite"></div>
             </div>

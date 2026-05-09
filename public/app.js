@@ -53,8 +53,7 @@ const elements = {
   newActivityBtn: document.querySelector("#newActivityBtn"),
   activitySubmitBtn: document.querySelector("#activitySubmitBtn"),
   refreshAuditBtn: document.querySelector("#refreshAuditBtn"),
-  clearSignupsBtn: document.querySelector("#clearSignupsBtn"),
-  adminLogoutBtn: document.querySelector("#adminLogoutBtn"),
+  deleteActivityBtn: document.querySelector("#deleteActivityBtn"),
   auditList: document.querySelector("#auditList"),
   boardHint: document.querySelector("#boardHint"),
   backToListBtn: document.querySelector("#backToListBtn"),
@@ -84,12 +83,6 @@ const elements = {
   adminPasswordInput: document.querySelector("#adminPasswordInput"),
   closeAdminDialogBtn: document.querySelector("#closeAdminDialogBtn"),
   deleteActivityBtn: document.querySelector("#deleteActivityBtn"),
-  changePasswordBtn: document.querySelector("#changePasswordBtn"),
-  passwordForm: document.querySelector("#passwordForm"),
-  newPasswordInput: document.querySelector("#newPasswordInput"),
-  confirmPasswordInput: document.querySelector("#confirmPasswordInput"),
-  submitPasswordBtn: document.querySelector("#submitPasswordBtn"),
-  cancelPasswordBtn: document.querySelector("#cancelPasswordBtn"),
   toast: document.querySelector("#toast")
 };
 
@@ -858,34 +851,6 @@ function renderAuditItem(item) {
   `;
 }
 
-async function clearSignups() {
-  if (!confirm("确定清空当前活动的全部报名信息吗？审计记录会保留。")) {
-    return;
-  }
-  try {
-    appState = await api("/api/activity/clear", {
-      method: "POST",
-      body: JSON.stringify({ activityId: selectedActivityId, reason: "活动结束，清空全部报名" })
-    });
-    auditLoadedOnce = false;
-    renderAll();
-    showToast("报名已清空");
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-async function adminLogout() {
-  try {
-    await api("/api/admin/logout", { method: "POST", body: "{}" });
-    auditLoadedOnce = false;
-    await loadState({ activityId: selectedActivityId });
-    showToast("已退出后台");
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
 async function deleteActivity() {
   if (!appState?.activity?.id) {
     showToast("没有选中的活动");
@@ -905,48 +870,6 @@ async function deleteActivity() {
     localStorage.removeItem("selectedActivityId");
     await loadState();
     showToast("活动已删除");
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-function showPasswordForm() {
-  elements.passwordForm.hidden = false;
-  elements.newPasswordInput.value = "";
-  elements.confirmPasswordInput.value = "";
-  elements.newPasswordInput.focus();
-}
-
-function hidePasswordForm() {
-  elements.passwordForm.hidden = true;
-  elements.newPasswordInput.value = "";
-  elements.confirmPasswordInput.value = "";
-}
-
-async function submitPasswordChange() {
-  const newPassword = elements.newPasswordInput.value;
-  const confirmPassword = elements.confirmPasswordInput.value;
-
-  if (!newPassword) {
-    showToast("请输入新密码");
-    return;
-  }
-  if (newPassword.length < 4) {
-    showToast("密码长度至少4位");
-    return;
-  }
-  if (newPassword !== confirmPassword) {
-    showToast("两次输入的密码不一致");
-    return;
-  }
-
-  try {
-    await api("/api/admin/password", {
-      method: "POST",
-      body: JSON.stringify({ password: newPassword })
-    });
-    hidePasswordForm();
-    showToast("密码修改成功");
   } catch (error) {
     showToast(error.message);
   }
@@ -1005,12 +928,7 @@ elements.deleteSignupBtn.addEventListener("click", deleteSignup);
 elements.adminLoginForm.addEventListener("submit", submitAdminLogin);
 elements.activityForm.addEventListener("submit", submitActivity);
 elements.refreshAuditBtn.addEventListener("click", loadAudit);
-elements.clearSignupsBtn.addEventListener("click", clearSignups);
-elements.adminLogoutBtn.addEventListener("click", adminLogout);
 elements.deleteActivityBtn.addEventListener("click", deleteActivity);
-elements.changePasswordBtn.addEventListener("click", showPasswordForm);
-elements.cancelPasswordBtn.addEventListener("click", hidePasswordForm);
-elements.submitPasswordBtn.addEventListener("click", submitPasswordChange);
 
 for (const input of [
   elements.tankCountInput,
