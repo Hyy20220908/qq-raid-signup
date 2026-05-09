@@ -48,8 +48,8 @@ const elements = {
   statusInput: document.querySelector("#statusInput"),
   tankCountInput: document.querySelector("#tankCountInput"),
   healerCountInput: document.querySelector("#healerCountInput"),
-  bossCountInput: document.querySelector("#bossCountInput"),
-  dpsCountInput: document.querySelector("#dpsCountInput"),  countTotal: document.querySelector("#countTotal"),
+  dpsCountInput: document.querySelector("#dpsCountInput"),
+  countTotal: document.querySelector("#countTotal"),
   newActivityBtn: document.querySelector("#newActivityBtn"),
   activitySubmitBtn: document.querySelector("#activitySubmitBtn"),
   refreshAuditBtn: document.querySelector("#refreshAuditBtn"),
@@ -83,6 +83,13 @@ const elements = {
   adminLoginForm: document.querySelector("#adminLoginForm"),
   adminPasswordInput: document.querySelector("#adminPasswordInput"),
   closeAdminDialogBtn: document.querySelector("#closeAdminDialogBtn"),
+  deleteActivityBtn: document.querySelector("#deleteActivityBtn"),
+  changePasswordBtn: document.querySelector("#changePasswordBtn"),
+  passwordForm: document.querySelector("#passwordForm"),
+  newPasswordInput: document.querySelector("#newPasswordInput"),
+  confirmPasswordInput: document.querySelector("#confirmPasswordInput"),
+  submitPasswordBtn: document.querySelector("#submitPasswordBtn"),
+  cancelPasswordBtn: document.querySelector("#cancelPasswordBtn"),
   toast: document.querySelector("#toast")
 };
 
@@ -297,7 +304,7 @@ function fillActivityForm(activity) {
       endTime: "",
       status: "active",
       creator: { name: currentUser?.displayName || "管理员", qq: currentUser?.qq || "" },
-      counts: { tank: 5, healer: 5, boss: 0, dps: 15 }
+      counts: { tank: 4, healer: 5, boss: 0, dps: 16 }
     };
 
   elements.activityIdInput.value = source.id || "";
@@ -309,9 +316,9 @@ function fillActivityForm(activity) {
   elements.startTimeInput.value = toLocalInputValue(source.startTime);
   elements.endTimeInput.value = toLocalInputValue(source.endTime);
   elements.statusInput.value = source.status || "active";
-  elements.tankCountInput.value = source.counts?.tank ?? 5;
+  elements.tankCountInput.value = source.counts?.tank ?? 4;
   elements.healerCountInput.value = source.counts?.healer ?? 5;
-  elements.dpsCountInput.value = source.counts?.dps ?? 15;
+  elements.dpsCountInput.value = source.counts?.dps ?? 16;
   elements.activityFormTitle.textContent = source.id ? "编辑当前活动" : "创建新活动";
   elements.activitySubmitBtn.textContent = source.id ? "保存活动" : "创建活动";
   updateCountTotal();
@@ -407,14 +414,16 @@ function renderSlot(slot) {
 
   const bossBadge = isBoss ? `<span class="boss-badge">👑 老板</span>` : "";
 
+  // 老板徽章放入 slot-body 内，避免多出一个 grid 子项打乱 1fr 分配
+  const bodyWithBadge = bossBadge ? `${bossBadge}${body}` : body;
+
   return `
     <button class="${classes}" type="button" data-slot-id="${slot.id}">
       <span class="slot-top">
         <span class="slot-tag ${slot.role}">${slot.label}</span>
         <span class="slot-status">${status}</span>
       </span>
-      ${bossBadge}
-      <span class="slot-body">${body}</span>
+      <span class="slot-body">${bodyWithBadge}</span>
       <span class="slot-action">${action}</span>
     </button>
   `;
@@ -868,6 +877,72 @@ async function adminLogout() {
   }
 }
 
+async function deleteActivity() {
+  if (!appState?.activity?.id) {
+    showToast("没有选中的活动");
+    return;
+  }
+  const activityTitle = appState.activity.title;
+  if (!confirm(`确定要删除活动「${activityTitle}」吗？此操作不可恢复。`)) {
+    return;
+  }
+  try {
+    await api(`/api/activities/${encodeURIComponent(appState.activity.id)}`, {
+      method: "DELETE",
+      body: JSON.stringify({})
+    });
+    auditLoadedOnce = false;
+    selectedActivityId = "";
+    localStorage.removeItem("selectedActivityId");
+    await loadState();
+    showToast("活动已删除");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function showPasswordForm() {
+  elements.passwordForm.hidden = false;
+  elements.newPasswordInput.value = "";
+  elements.confirmPasswordInput.value = "";
+  elements.newPasswordInput.focus();
+}
+
+function hidePasswordForm() {
+  elements.passwordForm.hidden = true;
+  elements.newPasswordInput.value = "";
+  elements.confirmPasswordInput.value = "";
+}
+
+async function submitPasswordChange() {
+  const newPassword = elements.newPasswordInput.value;
+  const confirmPassword = elements.confirmPasswordInput.value;
+
+  if (!newPassword) {
+    showToast("请输入新密码");
+    return;
+  }
+  if (newPassword.length < 4) {
+    showToast("密码长度至少4位");
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    showToast("两次输入的密码不一致");
+    return;
+  }
+
+  try {
+    await api("/api/admin/password", {
+      method: "POST",
+      body: JSON.stringify({ password: newPassword })
+    });
+    hidePasswordForm();
+    showToast("密码修改成功");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
 function startAutoRefresh() {
   clearInterval(refreshTimer);
   refreshTimer = setInterval(async () => {
@@ -923,6 +998,10 @@ elements.activityForm.addEventListener("submit", submitActivity);
 elements.refreshAuditBtn.addEventListener("click", loadAudit);
 elements.clearSignupsBtn.addEventListener("click", clearSignups);
 elements.adminLogoutBtn.addEventListener("click", adminLogout);
+elements.deleteActivityBtn.addEventListener("click", deleteActivity);
+elements.changePasswordBtn.addEventListener("click", showPasswordForm);
+elements.cancelPasswordBtn.addEventListener("click", hidePasswordForm);
+elements.submitPasswordBtn.addEventListener("click", submitPasswordChange);
 
 for (const input of [
   elements.tankCountInput,

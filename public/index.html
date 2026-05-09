@@ -108,7 +108,7 @@
               <div class="count-grid">
                 <label>
                   <span>T 位</span>
-                  <input id="tankCountInput" type="number" min="0" max="25" value="5" />
+                  <input id="tankCountInput" type="number" min="0" max="25" value="4" />
                 </label>
                 <label>
                   <span>奶位</span>
@@ -116,7 +116,7 @@
                 </label>
                 <label>
                   <span>输出位</span>
-                  <input id="dpsCountInput" type="number" min="0" max="25" value="15" />
+                  <input id="dpsCountInput" type="number" min="0" max="25" value="16" />
                 </label>
               </div>
               <div class="form-footer">
@@ -129,7 +129,25 @@
               <div class="tool-row">
                 <button id="refreshAuditBtn" class="ghost-button" type="button">刷新记录</button>
                 <button id="clearSignupsBtn" class="danger-button" type="button">清空当前报名</button>
+              </div>
+              <div class="tool-row">
+                <button id="deleteActivityBtn" class="danger-button" type="button">删除当前活动</button>
+                <button id="changePasswordBtn" class="ghost-button" type="button">修改密码</button>
                 <button id="adminLogoutBtn" class="ghost-button" type="button">退出后台</button>
+              </div>
+              <div class="password-form" id="passwordForm" hidden>
+                <label>
+                  <span>新密码</span>
+                  <input id="newPasswordInput" type="password" autocomplete="new-password" placeholder="输入新密码" />
+                </label>
+                <label>
+                  <span>确认密码</span>
+                  <input id="confirmPasswordInput" type="password" autocomplete="new-password" placeholder="再次输入新密码" />
+                </label>
+                <div class="tool-row">
+                  <button id="submitPasswordBtn" class="primary-button" type="button">确认修改</button>
+                  <button id="cancelPasswordBtn" class="ghost-button" type="button">取消</button>
+                </div>
               </div>
               <div class="audit-list" id="auditList" aria-live="polite"></div>
             </div>

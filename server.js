@@ -3,7 +3,19 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 3001);
+
+// 加载 .env 文件
+const envPath = path.join(__dirname, ".env");
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, "utf8");
+  envContent.split("\n").forEach((line) => {
+    const match = line.match(/^ADMIN_PASSWORD=(.+)$/);
+    if (match) {
+      process.env.ADMIN_PASSWORD = match[1].trim();
+    }
+  });
+}
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const DEFAULT_DATA_DIR = path.join(__dirname, "data");
 const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(DEFAULT_DATA_DIR, "db.json");
@@ -416,8 +428,9 @@ function normalizeCounts(input) {
     boss: toNonNegativeInt(input.boss),
     dps: toNonNegativeInt(input.dps)
   };
-  if (Object.values(counts).some((count) => count === null)) {
-    throw new Error("位置数量必须是 0 到 25 的整数");
+  const invalidKey = Object.keys(counts).find(k => counts[k] === null);
+  if (invalidKey) {
+    throw new Error(`位置数量必须是 0 到 25 的整数，但收到 ${JSON.stringify(input)}，字段 ${invalidKey}=${JSON.stringify(input[invalidKey])}`);
   }
   const total = counts.tank + counts.healer + counts.dps;
   if (total !== 25) {
@@ -688,6 +701,61 @@ async function handleApi(req, res) {
       });
       writeDb(db);
       sendJson(res, 200, publicState(db, req, activity.id));
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/activities/")) {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
+      const activityId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/activities/", "")), 80);
+      const db = readDb();
+      const index = db.activities.findIndex((a) => a.id === activityId);
+      if (index === -1) {
+        sendError(res, 404, "活动不存在");
+        return;
+      }
+      const activity = db.activities[index];
+      if (db.activities.length === 1) {
+        sendError(res, 400, "不能删除最后一个活动，至少保留一个活动");
+        return;
+      }
+      db.activities.splice(index, 1);
+      delete db.signups[activityId];
+      delete db.drafts[activityId];
+      appendAudit(db, {
+        actor: "admin",
+        action: "activity:delete",
+        activityId,
+        target: activity.title,
+        before: activity,
+        after: null,
+        summary: `删除活动：${activity.title}`
+      });
+      writeDb(db);
+      const nextActivity = db.activities[0];
+      db.selectedActivityId = nextActivity.id;
+      sendJson(res, 200, publicState(db, req, nextActivity.id));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/password") {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
+      const body = await readBody(req);
+      const password = String(body.password || "").trim();
+      if (!password || password.length < 4) {
+        sendError(res, 400, "密码长度至少4位");
+        return;
+      }
+      // 修改密码需要重启服务生效，保存到环境变量文件
+      const envPath = path.join(__dirname, ".env");
+      const envContent = `ADMIN_PASSWORD=${password}\n`;
+      fs.writeFileSync(envPath, envContent, "utf8");
+      sendJson(res, 200, { ok: true, message: "密码已保存，重启服务后生效" });
       return;
     }
 
