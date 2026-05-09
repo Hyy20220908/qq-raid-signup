@@ -1091,6 +1091,7 @@ async function handleApi(req, res) {
       const db = readDb();
       const current = db.settings || defaultSettings();
       const next = {
+        ...current,
         brandLogo: sanitizeText(body.brandLogo, 8) || current.brandLogo,
         brandTitle: sanitizeText(body.brandTitle, 40) || current.brandTitle,
         brandSubtitle: sanitizeText(body.brandSubtitle, 80) || current.brandSubtitle,
