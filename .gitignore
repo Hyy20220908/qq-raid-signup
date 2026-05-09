@@ -16,6 +16,15 @@ server.out.log
 .DS_Store
 Thumbs.db
 *.tmp
+cookies.txt
+server_out.txt
+nul
+
+# 工作记忆（不提交到仓库）
+.workbuddy/
+
+# 测试数据
+test_activity.json
 
 # 依赖
 node_modules/
