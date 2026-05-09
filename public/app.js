@@ -15,6 +15,7 @@ let refreshTimer = null;
 let auditLoadedOnce = false;
 let isCreatingActivity = false;
 let adminPanelVisible = localStorage.getItem("adminPanelVisible") === "true";
+let settingsFormDirty = false;
 
 const elements = {
   // activitySubtitle was renamed to brandSubtitle in branding commit
@@ -353,18 +354,27 @@ function renderAdminPanel(options = {}) {
     auditLoadedOnce = true;
     loadAudit();
   }
-  fillSettingsForm();
+  const shouldPreserveSettingsForm =
+    settingsFormDirty ||
+    [
+      elements.settingsBrandTitle,
+      elements.settingsBrandSubtitle,
+      elements.settingsBgColor
+    ].includes(document.activeElement);
+  fillSettingsForm({ preserveInputs: shouldPreserveSettingsForm });
 }
 
-function fillSettingsForm() {
+function fillSettingsForm(options = {}) {
   if (!appState?.settings) {
     return;
   }
   const s = appState.settings;
-  elements.settingsBrandTitle.value = s.brandTitle || "";
-  elements.settingsBrandSubtitle.value = s.brandSubtitle || "";
-  elements.settingsBgColor.value = s.bgColor || "";
-  updateBgPreview();
+  if (!options.preserveInputs) {
+    elements.settingsBrandTitle.value = s.brandTitle || "";
+    elements.settingsBrandSubtitle.value = s.brandSubtitle || "";
+    elements.settingsBgColor.value = s.bgColor || "";
+    updateBgPreview();
+  }
   updateLogoPreview();
 }
 
@@ -453,6 +463,7 @@ async function saveSettings() {
       body: JSON.stringify(body)
     });
     appState.settings = payload.settings;
+    settingsFormDirty = false;
     renderAll({ preserveAdminForm: true, skipAudit: true });
     showToast("品牌设置已保存");
   } catch (error) {
@@ -1140,6 +1151,16 @@ elements.saveSettingsBtn.addEventListener("click", saveSettings);
 elements.uploadLogoBtn.addEventListener("click", uploadLogo);
 elements.removeLogoBtn.addEventListener("click", removeLogo);
 elements.settingsBgColor.addEventListener("input", updateBgPreview);
+
+for (const input of [
+  elements.settingsBrandTitle,
+  elements.settingsBrandSubtitle,
+  elements.settingsBgColor
+].filter(Boolean)) {
+  input.addEventListener("input", () => {
+    settingsFormDirty = true;
+  });
+}
 
 for (const input of [
   elements.tankCountInput,
