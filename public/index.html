@@ -10,10 +10,10 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="brand-block">
-          <span class="brand-mark" aria-hidden="true">令</span>
+          <span id="brandLogo" class="brand-mark" aria-hidden="true">令</span>
           <div>
-            <h1>团本召集令</h1>
-            <p id="activitySubtitle">正在读取活动列表...</p>
+            <h1 id="brandTitle">团本召集令</h1>
+            <p id="brandSubtitle">剑网3 · 副本活动报名</p>
           </div>
         </div>
         <div class="user-area">
@@ -131,6 +131,31 @@
                 <button id="deleteActivityBtn" class="danger-button" type="button">删除当前活动</button>
               </div>
               <div class="audit-list" id="auditList" aria-live="polite"></div>
+              <details class="settings-panel">
+                <summary class="settings-summary">自定义品牌</summary>
+                <div class="settings-form">
+                  <label>
+                    <span>Logo（文字或 emoji）</span>
+                    <input id="settingsBrandLogo" maxlength="8" placeholder="令" />
+                  </label>
+                  <label>
+                    <span>品牌标题</span>
+                    <input id="settingsBrandTitle" maxlength="40" placeholder="团本召集令" />
+                  </label>
+                  <label>
+                    <span>副标题</span>
+                    <input id="settingsBrandSubtitle" maxlength="80" placeholder="剑网3 · 副本活动报名" />
+                  </label>
+                  <label>
+                    <span>背景色（十六进制）</span>
+                    <div class="color-row">
+                      <input id="settingsBgColor" maxlength="7" placeholder="#2a211b" />
+                      <span id="bgColorPreview" class="color-preview"></span>
+                    </div>
+                  </label>
+                  <button id="saveSettingsBtn" class="primary-button" type="button">保存设置</button>
+                </div>
+              </details>
             </div>
           </div>
         </section>

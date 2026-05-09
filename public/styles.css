@@ -30,7 +30,7 @@ body {
     linear-gradient(90deg, rgba(35, 26, 20, 0.16) 1px, transparent 1px),
     linear-gradient(180deg, rgba(35, 26, 20, 0.10) 1px, transparent 1px),
     repeating-linear-gradient(135deg, rgba(184, 135, 45, 0.08) 0 2px, transparent 2px 12px),
-    #2a211b;
+    var(--custom-bg, #2a211b);
   background-size: 34px 34px, 34px 34px, 100% 100%, 100% 100%;
   font-family:
     "Microsoft YaHei",
@@ -1088,6 +1088,52 @@ select:focus {
 
 .toast[data-type="error"] {
   background: rgba(178, 49, 39, 0.96);
+}
+
+/* ─── 自定义品牌设置面板 ─── */
+.settings-panel {
+  margin-top: 8px;
+  border: 1px solid rgba(120, 82, 37, 0.22);
+  border-radius: var(--radius);
+  background: rgba(255, 250, 240, 0.48);
+}
+
+.settings-summary {
+  padding: 10px 12px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-form {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.settings-form .primary-button {
+  justify-self: start;
+}
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-row input {
+  flex: 1;
+}
+
+.color-preview {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(120, 82, 37, 0.28);
+  border-radius: 6px;
+  flex-shrink: 0;
 }
 
 @media (max-width: 940px) {

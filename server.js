@@ -106,6 +106,7 @@ function defaultDb() {
     drafts: {
       [activity.id]: {}
     },
+    settings: defaultSettings(),
     audit: [
       {
         id: crypto.randomUUID(),
@@ -119,6 +120,15 @@ function defaultDb() {
         summary: "初始化报名应用"
       }
     ]
+  };
+}
+
+function defaultSettings() {
+  return {
+    brandLogo: "令",
+    brandTitle: "团本召集令",
+    brandSubtitle: "剑网3 · 副本活动报名",
+    bgColor: "#2a211b"
   };
 }
 
@@ -140,6 +150,11 @@ function isSlotSignupMap(value) {
 }
 
 function migrateDb(db) {
+  // 确保 settings 永远存在
+  if (!db.settings) {
+    db.settings = defaultSettings();
+  }
+
   if (Array.isArray(db.activities) && db.version >= 3) {
     db.activities = db.activities.map((activity) => newActivity(activity));
     db.signups = db.signups || {};
@@ -547,7 +562,8 @@ function publicState(db, req, activityId) {
       roles: roleLabels,
       specs: roleOptions
     },
-    isAdmin: isAdmin(req)
+    isAdmin: isAdmin(req),
+    settings: db.settings || defaultSettings()
   };
 }
 
@@ -1036,6 +1052,35 @@ async function handleApi(req, res) {
       });
       writeDb(db);
       sendJson(res, 200, publicState(db, req, activity.id));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/settings") {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
+      const body = await readBody(req);
+      const db = readDb();
+      const current = db.settings || defaultSettings();
+      const next = {
+        brandLogo: sanitizeText(body.brandLogo, 8) || current.brandLogo,
+        brandTitle: sanitizeText(body.brandTitle, 40) || current.brandTitle,
+        brandSubtitle: sanitizeText(body.brandSubtitle, 80) || current.brandSubtitle,
+        bgColor: /^#[0-9a-fA-F]{3,6}$/.test(String(body.bgColor || "")) ? body.bgColor : current.bgColor
+      };
+      db.settings = next;
+      appendAudit(db, {
+        actor: "admin",
+        action: "settings:update",
+        activityId: db.selectedActivityId,
+        target: "UI 设置",
+        before: current,
+        after: next,
+        summary: "更新自定义 UI 设置"
+      });
+      writeDb(db);
+      sendJson(res, 200, { ok: true, settings: next });
       return;
     }
 

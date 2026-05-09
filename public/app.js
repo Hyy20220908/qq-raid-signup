@@ -83,6 +83,15 @@ const elements = {
   adminPasswordInput: document.querySelector("#adminPasswordInput"),
   closeAdminDialogBtn: document.querySelector("#closeAdminDialogBtn"),
   deleteActivityBtn: document.querySelector("#deleteActivityBtn"),
+  brandLogo: document.querySelector("#brandLogo"),
+  brandTitle: document.querySelector("#brandTitle"),
+  brandSubtitle: document.querySelector("#brandSubtitle"),
+  settingsBrandLogo: document.querySelector("#settingsBrandLogo"),
+  settingsBrandTitle: document.querySelector("#settingsBrandTitle"),
+  settingsBrandSubtitle: document.querySelector("#settingsBrandSubtitle"),
+  settingsBgColor: document.querySelector("#settingsBgColor"),
+  bgColorPreview: document.querySelector("#bgColorPreview"),
+  saveSettingsBtn: document.querySelector("#saveSettingsBtn"),
   toast: document.querySelector("#toast")
 };
 
@@ -335,6 +344,52 @@ function renderAdminPanel(options = {}) {
     auditLoadedOnce = true;
     loadAudit();
   }
+  fillSettingsForm();
+}
+
+function fillSettingsForm() {
+  if (!appState?.settings) {
+    return;
+  }
+  const s = appState.settings;
+  elements.settingsBrandLogo.value = s.brandLogo || "";
+  elements.settingsBrandTitle.value = s.brandTitle || "";
+  elements.settingsBrandSubtitle.value = s.brandSubtitle || "";
+  elements.settingsBgColor.value = s.bgColor || "";
+  updateBgPreview();
+}
+
+function updateBgPreview() {
+  const color = elements.settingsBgColor.value;
+  if (/^#[0-9a-fA-F]{3,6}$/.test(color)) {
+    elements.bgColorPreview.style.background = color;
+    elements.bgColorPreview.hidden = false;
+  } else {
+    elements.bgColorPreview.hidden = true;
+  }
+}
+
+async function saveSettings() {
+  if (!appState?.isAdmin) {
+    return;
+  }
+  const body = {
+    brandLogo: elements.settingsBrandLogo.value,
+    brandTitle: elements.settingsBrandTitle.value,
+    brandSubtitle: elements.settingsBrandSubtitle.value,
+    bgColor: elements.settingsBgColor.value
+  };
+  try {
+    const payload = await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify(body)
+    });
+    appState.settings = payload.settings;
+    renderAll({ preserveAdminForm: true, skipAudit: true });
+    showToast("品牌设置已保存");
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function renderBoard() {
@@ -479,8 +534,27 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function renderBrand() {
+  if (!appState?.settings) {
+    return;
+  }
+  const s = appState.settings;
+  elements.brandLogo.textContent = s.brandLogo || "令";
+  elements.brandTitle.textContent = s.brandTitle || "团本召集令";
+  elements.brandSubtitle.textContent = s.brandSubtitle || "";
+}
+
+function applyBackground() {
+  if (!appState?.settings?.bgColor) {
+    return;
+  }
+  document.documentElement.style.setProperty("--custom-bg", appState.settings.bgColor);
+}
+
 function renderAll(options = {}) {
   renderUser();
+  renderBrand();
+  applyBackground();
   renderActivityCards();
   renderSummary();
   renderAdminPanel(options);
@@ -929,6 +1003,8 @@ elements.adminLoginForm.addEventListener("submit", submitAdminLogin);
 elements.activityForm.addEventListener("submit", submitActivity);
 elements.refreshAuditBtn.addEventListener("click", loadAudit);
 elements.deleteActivityBtn.addEventListener("click", deleteActivity);
+elements.saveSettingsBtn.addEventListener("click", saveSettings);
+elements.settingsBgColor.addEventListener("input", updateBgPreview);
 
 for (const input of [
   elements.tankCountInput,
