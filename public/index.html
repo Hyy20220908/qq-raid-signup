@@ -63,13 +63,15 @@
               <h2>掌柜后台</h2>
               <p>管理活动、调整名册。</p>
             </div>
-            <button id="newActivityBtn" class="ghost-button" type="button">新建活动</button>
           </div>
 
           <div class="admin-layout">
             <form id="activityForm" class="admin-form">
               <input id="activityIdInput" type="hidden" />
-              <h3 id="activityFormTitle">编辑当前活动</h3>
+              <div class="form-title-row">
+                <h3 id="activityFormTitle">编辑当前活动</h3>
+                <button id="newActivityBtn" class="ghost-button" type="button">新建活动</button>
+              </div>
               <label>
                 <span>活动标题</span>
                 <input id="activityNameInput" maxlength="60" placeholder="例如 周五大战招募" />

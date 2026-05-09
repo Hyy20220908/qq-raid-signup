@@ -20,9 +20,12 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const DEFAULT_DATA_DIR = path.join(__dirname, "data");
 const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(DEFAULT_DATA_DIR, "db.json");
 const DATA_DIR = path.dirname(DB_PATH);
+const LOG_DIR = process.env.LOG_DIR ? path.resolve(process.env.LOG_DIR) : path.join(DATA_DIR, "logs");
+const LOG_FILE = process.env.LOG_FILE ? path.resolve(process.env.LOG_FILE) : path.join(LOG_DIR, "app.log");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DRAFT_TTL_MS = 90 * 1000;
 const PASSWORD_HASH_ITERATIONS = 210_000;
+const MAX_LOG_BYTES = 5 * 1024 * 1024;
 
 const tankSpecs = ["明尊", "洗髓", "铁牢", "铁骨"];
 const healerSpecs = ["云裳", "补天", "离经", "相知", "灵素"];
@@ -155,6 +158,84 @@ function verifyAdminPassword(db, password) {
   return value === ADMIN_PASSWORD;
 }
 
+function serializeError(error) {
+  if (!error || typeof error !== "object") {
+    return { message: String(error) };
+  }
+  return {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    code: error.code
+  };
+}
+
+function redactForLog(value) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactForLog);
+  }
+  const redacted = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (/password|token|cookie|authorization|image/i.test(key)) {
+      redacted[key] = "[redacted]";
+    } else {
+      redacted[key] = redactForLog(item);
+    }
+  }
+  return redacted;
+}
+
+function rotateLogIfNeeded() {
+  try {
+    if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_LOG_BYTES) {
+      const oldPath = `${LOG_FILE}.1`;
+      try { fs.unlinkSync(oldPath); } catch {}
+      fs.renameSync(LOG_FILE, oldPath);
+    }
+  } catch {
+    // 日志轮转失败时仍继续写控制台。
+  }
+}
+
+function writeLogLine(line) {
+  try {
+    if (!fs.existsSync(LOG_DIR)) {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+    }
+    rotateLogIfNeeded();
+    fs.appendFileSync(LOG_FILE, `${line}\n`, "utf8");
+  } catch {
+    // 文件日志不可用时，控制台日志仍会被 Railway 收集。
+  }
+}
+
+function logEvent(level, event, details = {}) {
+  const entry = {
+    at: new Date().toISOString(),
+    level,
+    event,
+    pid: process.pid,
+    ...redactForLog(details)
+  };
+  const line = JSON.stringify(entry);
+  if (level === "error" || level === "fatal") {
+    console.error(line);
+  } else {
+    console.log(line);
+  }
+  writeLogLine(line);
+}
+
+function logError(event, error, details = {}) {
+  logEvent("error", event, {
+    ...details,
+    error: serializeError(error)
+  });
+}
+
 function defaultSettings() {
   return {
     brandLogo: "令",
@@ -255,18 +336,18 @@ function writeDb(db) {
     fs.renameSync(tmpPath, DB_PATH);
     dirty = false;
   }).catch((err) => {
-    console.error("writeDb 持久化失败:", err);
+    logError("db_write_failed", err, { dbPath: DB_PATH });
     dirty = true;
   });
 }
 
 // 定时持久化：防止写队列积压时进程崩溃丢数据
-setInterval(() => {
-  if (dirty) {
-    const prev = writeSerial;
-    writeSerial = prev.then(() => { dirty = false; });
+const persistenceTimer = setInterval(() => {
+  if (dirty && dbCache) {
+    writeDb(dbCache);
   }
 }, PERSIST_INTERVAL_MS);
+persistenceTimer.unref?.();
 
 function appendAudit(db, entry) {
   db.audit.unshift({
@@ -697,6 +778,7 @@ function serveStatic(req, res) {
 
 async function handleApi(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  const requestId = crypto.randomUUID();
 
   try {
     if (req.method === "GET" && url.pathname === "/api/state") {
@@ -1275,13 +1357,32 @@ async function handleApi(req, res) {
 
     sendError(res, 404, "接口不存在");
   } catch (error) {
+    logError("api_request_failed", error, {
+      requestId,
+      method: req.method,
+      path: url.pathname
+    });
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
     sendError(res, 400, error.message || "请求处理失败");
   }
 }
 
 const server = http.createServer((req, res) => {
   if (req.url.startsWith("/api/")) {
-    handleApi(req, res);
+    handleApi(req, res).catch((error) => {
+      logError("api_unhandled_rejection", error, {
+        method: req.method,
+        path: req.url
+      });
+      if (!res.headersSent) {
+        sendError(res, 500, "服务器内部错误");
+      } else {
+        res.destroy();
+      }
+    });
     return;
   }
   if (req.url.startsWith("/logos/")) {
@@ -1291,10 +1392,69 @@ const server = http.createServer((req, res) => {
   serveStatic(req, res);
 });
 
+server.on("clientError", (error, socket) => {
+  logError("http_client_error", error);
+  if (socket.writable) {
+    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+  }
+});
+
+server.on("error", (error) => {
+  logError("server_error", error, { port: PORT });
+});
+
+let shuttingDown = false;
+
+function waitForWrites(timeoutMs = 5000) {
+  return Promise.race([
+    writeSerial,
+    new Promise((resolve) => setTimeout(resolve, timeoutMs))
+  ]);
+}
+
+function shutdown(reason, error) {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  clearInterval(persistenceTimer);
+  if (error) {
+    logEvent("fatal", "process_shutdown", { reason, error: serializeError(error) });
+  } else {
+    logEvent("info", "process_shutdown", { reason });
+  }
+
+  const forceExitTimer = setTimeout(() => {
+    logEvent("fatal", "process_shutdown_forced", { reason });
+    process.exit(error ? 1 : 0);
+  }, 10_000);
+  forceExitTimer.unref?.();
+
+  server.close(async () => {
+    await waitForWrites();
+    logEvent("info", "process_shutdown_complete", { reason });
+    process.exit(error ? 1 : 0);
+  });
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("uncaughtException", (error) => shutdown("uncaughtException", error));
+process.on("unhandledRejection", (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  shutdown("unhandledRejection", error);
+});
+
 ensureDb();
 server.listen(PORT, () => {
-  console.log(`QQ raid signup app is running at http://localhost:${PORT}`);
+  logEvent("info", "server_started", {
+    port: PORT,
+    dbPath: DB_PATH,
+    logFile: LOG_FILE
+  });
   if (!process.env.ADMIN_PASSWORD) {
-    console.log("ADMIN_PASSWORD is not set. Local admin password is admin123.");
+    logEvent("warn", "default_admin_password_enabled", {
+      message: "ADMIN_PASSWORD is not set. Local admin password is admin123."
+    });
   }
 });

@@ -243,12 +243,15 @@ function renderActivityCards() {
   elements.emptyActivities.hidden = activities.length > 0;
   elements.activityCards.innerHTML = activities
     .map((activity) => {
-      const selected = activity.id === selectedActivityId;
+      const selected = !isCreatingActivity && activity.id === selectedActivityId;
       return `
-        <article class="activity-card ${selected ? "selected" : ""}" data-activity-id="${activity.id}">
+        <article class="activity-card ${selected ? "selected" : ""}" data-activity-id="${activity.id}" ${selected ? 'aria-current="true"' : ""}>
           <div class="activity-card-top">
             <strong class="activity-card-title">${escapeHtml(activity.title)}</strong>
-            <span class="activity-status ${activity.status}">${escapeHtml(activity.statusLabel)}</span>
+            <span class="activity-card-badges">
+              ${selected ? '<span class="selected-marker">当前查看</span>' : ""}
+              <span class="activity-status ${activity.status}">${escapeHtml(activity.statusLabel)}</span>
+            </span>
           </div>
           <div class="activity-card-meta">
             <span class="difficulty-pill ${activity.difficulty}">${escapeHtml(activity.difficultyLabel)}</span>
@@ -1175,6 +1178,8 @@ elements.adminToggleBtn.addEventListener("click", () => {
 elements.newActivityBtn.addEventListener("click", () => {
   isCreatingActivity = true;
   fillActivityForm(null);
+  renderActivityCards();
+  elements.activityForm.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 elements.closeDialogBtn.addEventListener("click", () => elements.signupDialog.close());
 elements.signupDialog.addEventListener("close", releaseSelectedDraft);
