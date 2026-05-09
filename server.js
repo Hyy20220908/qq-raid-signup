@@ -11,7 +11,7 @@ if (fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, "utf8");
   envContent.split("\n").forEach((line) => {
     const match = line.match(/^ADMIN_PASSWORD=(.+)$/);
-    if (match) {
+    if (match && !process.env.ADMIN_PASSWORD) {
       process.env.ADMIN_PASSWORD = match[1].trim();
     }
   });
@@ -604,6 +604,8 @@ function contentTypeFor(filePath) {
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
     ".ico": "image/x-icon"
   };
   return types[ext] || "application/octet-stream";

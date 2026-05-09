@@ -10,7 +10,7 @@ $env:DB_PATH="./data/db.json"
 npm start
 ```
 
-浏览器打开 `http://localhost:3000`。
+浏览器打开 `http://localhost:3001`。
 
 如果没有设置 `ADMIN_PASSWORD`，本地开发默认管理员密码是 `admin123`。正式使用时请务必设置环境变量。
 

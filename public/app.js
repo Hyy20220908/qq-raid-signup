@@ -54,6 +54,8 @@ const elements = {
   newActivityBtn: document.querySelector("#newActivityBtn"),
   activitySubmitBtn: document.querySelector("#activitySubmitBtn"),
   refreshAuditBtn: document.querySelector("#refreshAuditBtn"),
+  clearActivityBtn: document.querySelector("#clearActivityBtn"),
+  adminLogoutBtn: document.querySelector("#adminLogoutBtn"),
   deleteActivityBtn: document.querySelector("#deleteActivityBtn"),
   auditList: document.querySelector("#auditList"),
   boardHint: document.querySelector("#boardHint"),
@@ -83,7 +85,6 @@ const elements = {
   adminLoginForm: document.querySelector("#adminLoginForm"),
   adminPasswordInput: document.querySelector("#adminPasswordInput"),
   closeAdminDialogBtn: document.querySelector("#closeAdminDialogBtn"),
-  deleteActivityBtn: document.querySelector("#deleteActivityBtn"),
   brandLogo: document.querySelector("#brandLogo"),
   brandLogoText: document.querySelector("#brandLogoText"),
   brandLogoImg: document.querySelector("#brandLogoImg"),
@@ -1026,6 +1027,57 @@ async function deleteActivity() {
   }
 }
 
+async function clearActivitySignups() {
+  if (!appState?.activity?.id) {
+    showToast("没有选中的活动");
+    return;
+  }
+
+  const signupCount = Object.keys(appState.signups || {}).length;
+  if (signupCount === 0) {
+    showToast("当前活动没有报名需要清空");
+    return;
+  }
+
+  const activityTitle = appState.activity.title;
+  if (!confirm(`确定要清空「${activityTitle}」的全部报名吗？活动本身会保留。`)) {
+    return;
+  }
+
+  try {
+    appState = await api("/api/activity/clear", {
+      method: "POST",
+      body: JSON.stringify({
+        activityId: appState.activity.id,
+        reason: "管理员清空报名"
+      })
+    });
+    auditLoadedOnce = false;
+    renderAll();
+    showToast("报名已清空", "success");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function logoutAdmin() {
+  try {
+    await api("/api/admin/logout", {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
+
+  adminPanelVisible = false;
+  localStorage.setItem("adminPanelVisible", "false");
+  auditLoadedOnce = false;
+  await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
+  showToast("后台已退出", "success");
+}
+
 function startAutoRefresh() {
   clearInterval(refreshTimer);
   refreshTimer = setInterval(async () => {
@@ -1081,6 +1133,8 @@ elements.deleteSignupBtn.addEventListener("click", deleteSignup);
 elements.adminLoginForm.addEventListener("submit", submitAdminLogin);
 elements.activityForm.addEventListener("submit", submitActivity);
 elements.refreshAuditBtn.addEventListener("click", loadAudit);
+elements.clearActivityBtn.addEventListener("click", clearActivitySignups);
+elements.adminLogoutBtn.addEventListener("click", logoutAdmin);
 elements.deleteActivityBtn.addEventListener("click", deleteActivity);
 elements.saveSettingsBtn.addEventListener("click", saveSettings);
 elements.uploadLogoBtn.addEventListener("click", uploadLogo);
