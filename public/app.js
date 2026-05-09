@@ -1066,7 +1066,6 @@ elements.adminToggleBtn.addEventListener("click", () => {
     localStorage.setItem("adminPanelVisible", adminPanelVisible);
     elements.adminPanel.hidden = !appState.isAdmin || !adminPanelVisible;
   } else {
-  } else {
     elements.adminDialog.showModal();
   }
 });
