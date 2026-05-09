@@ -14,6 +14,7 @@ let draftHeartbeat = null;
 let refreshTimer = null;
 let auditLoadedOnce = false;
 let isCreatingActivity = false;
+let adminPanelVisible = localStorage.getItem("adminPanelVisible") === "true";
 
 const elements = {
   // activitySubtitle was renamed to brandSubtitle in branding commit
@@ -333,7 +334,8 @@ function fillActivityForm(activity) {
 }
 
 function renderAdminPanel(options = {}) {
-  elements.adminPanel.hidden = !appState.isAdmin;
+  // 用户手动隐藏/显示优先于自动刷新
+  elements.adminPanel.hidden = !appState.isAdmin || !adminPanelVisible;
   if (!appState.isAdmin) {
     auditLoadedOnce = false;
     isCreatingActivity = false;
@@ -921,6 +923,8 @@ async function submitAdminLogin(event) {
     elements.adminDialog.close();
     elements.adminPasswordInput.value = "";
     auditLoadedOnce = false;
+    adminPanelVisible = true;
+    localStorage.setItem("adminPanelVisible", "true");
     await loadState({ activityId: selectedActivityId });
     showToast("管理员已登录");
   } catch (error) {
@@ -1058,7 +1062,10 @@ elements.backToListBtn.addEventListener("click", () => {
 });
 elements.adminToggleBtn.addEventListener("click", () => {
   if (appState?.isAdmin) {
-    elements.adminPanel.hidden = !elements.adminPanel.hidden;
+    adminPanelVisible = !adminPanelVisible;
+    localStorage.setItem("adminPanelVisible", adminPanelVisible);
+    elements.adminPanel.hidden = !appState.isAdmin || !adminPanelVisible;
+  } else {
   } else {
     elements.adminDialog.showModal();
   }
