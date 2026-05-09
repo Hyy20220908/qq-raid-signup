@@ -6,6 +6,7 @@
 # 数据文件（使用持久化存储）
 data/db.json
 data/*.json
+data/logos/
 
 # 日志文件
 *.log
