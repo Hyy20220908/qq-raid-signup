@@ -440,7 +440,6 @@ async function saveSettings() {
     return;
   }
   const body = {
-    brandLogo: elements.settingsBrandLogo.value,
     brandTitle: elements.settingsBrandTitle.value,
     brandSubtitle: elements.settingsBrandSubtitle.value,
     bgColor: elements.settingsBgColor.value
