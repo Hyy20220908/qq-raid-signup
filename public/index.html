@@ -108,19 +108,15 @@
               <div class="count-grid">
                 <label>
                   <span>T 位</span>
-                  <input id="tankCountInput" type="number" min="0" max="25" />
+                  <input id="tankCountInput" type="number" min="0" max="25" value="5" />
                 </label>
                 <label>
                   <span>奶位</span>
-                  <input id="healerCountInput" type="number" min="0" max="25" />
-                </label>
-                <label>
-                  <span>老板位</span>
-                  <input id="bossCountInput" type="number" min="0" max="25" />
+                  <input id="healerCountInput" type="number" min="0" max="25" value="5" />
                 </label>
                 <label>
                   <span>输出位</span>
-                  <input id="dpsCountInput" type="number" min="0" max="25" />
+                  <input id="dpsCountInput" type="number" min="0" max="25" value="15" />
                 </label>
               </div>
               <div class="form-footer">
@@ -184,6 +180,14 @@
           <span>QQ 号</span>
           <input id="dialogQqInput" disabled />
         </label>
+        <div id="bossToggleField" class="boss-toggle-row">
+          <label class="boss-toggle-label" for="isBossInput">
+            <span class="boss-toggle-icon">👑</span>
+            <span class="boss-toggle-text">我是老板</span>
+            <span class="boss-toggle-hint">老板可自由选择任意职业心法</span>
+          </label>
+          <input id="isBossInput" type="checkbox" class="boss-checkbox" />
+        </div>
         <label id="specField">
           <span>心法</span>
           <select id="specInput"></select>
@@ -201,7 +205,7 @@
           <input id="gearScoreInput" type="number" min="0" max="999999" />
         </label>
         <label id="noteField">
-          <span>老板备注</span>
+          <span>备注</span>
           <input id="noteInput" maxlength="80" placeholder="可选" />
         </label>
         <div class="dialog-actions">

@@ -40,19 +40,20 @@ const dpsSpecs = [
   "输出心法待定"
 ];
 
+const allSpecs = [...tankSpecs, ...healerSpecs, ...dpsSpecs];
+
 const roleLabels = {
   tank: "T",
   healer: "奶",
-  boss: "老板",
   dps: "输出"
 };
 
-const roleOrder = ["tank", "healer", "boss", "dps"];
+const roleOrder = ["dps", "tank", "healer"];
 const roleOptions = {
   tank: tankSpecs,
   healer: healerSpecs,
   dps: dpsSpecs,
-  boss: ["老板"]
+  boss: allSpecs
 };
 
 const adminTokens = new Set();
@@ -60,6 +61,7 @@ const adminTokens = new Set();
 function newActivity(overrides = {}) {
   const now = new Date().toISOString();
   const id = overrides.id || crypto.randomUUID();
+  const counts = normalizeStoredCounts(overrides.counts || {});
   return {
     id,
     title: sanitizeText(overrides.title || overrides.instanceName || overrides.name || "25人副本报名", 60),
@@ -68,12 +70,7 @@ function newActivity(overrides = {}) {
     startTime: sanitizeText(overrides.startTime, 40),
     endTime: sanitizeText(overrides.endTime, 40),
     status: normalizeActivityStatus(overrides.status),
-    counts: {
-      tank: Number(overrides.counts?.tank ?? 4),
-      healer: Number(overrides.counts?.healer ?? 5),
-      boss: Number(overrides.counts?.boss ?? 0),
-      dps: Number(overrides.counts?.dps ?? 16)
-    },
+    counts,
     creator: normalizeCreator(overrides.creator || { name: overrides.updatedBy || "管理员" }),
     createdAt: overrides.createdAt || now,
     updatedAt: overrides.updatedAt || now,
@@ -313,21 +310,55 @@ function toNonNegativeInt(value) {
   return number;
 }
 
+function normalizeStoredCounts(input = {}) {
+  const tank = Number(input.tank ?? 4);
+  const healer = Number(input.healer ?? 5);
+  const boss = Number(input.boss ?? 0);
+  let dps = Number(input.dps ?? 16);
+  const nonBossTotal = tank + healer + dps;
+  const legacyTotal = nonBossTotal + boss;
+  if (nonBossTotal !== 25 && legacyTotal === 25) {
+    dps += boss;
+  }
+  return { tank, healer, boss, dps };
+}
+
 function buildSlots(activity) {
-  const slots = [];
-  for (const role of roleOrder) {
-    const count = activity.counts[role] || 0;
-    for (let index = 1; index <= count; index += 1) {
-      slots.push({
-        id: `${role}-${index}`,
-        role,
-        roleLabel: roleLabels[role],
-        index,
-        label: `${roleLabels[role]} ${index}`
-      });
+  const cells = [];
+  for (let column = 1; column <= 5; column += 1) {
+    for (let row = 1; row <= 5; row += 1) {
+      cells.push({ gridColumn: column, gridRow: row });
     }
   }
-  return slots;
+  const slots = [];
+  const used = new Set();
+  const counts = normalizeStoredCounts(activity.counts);
+  const takeCells = (preferredColumns, count) => {
+    const preferred = cells.filter((cell) => preferredColumns.includes(cell.gridColumn));
+    const fallback = cells.filter((cell) => !preferredColumns.includes(cell.gridColumn));
+    return [...preferred, ...fallback].filter((cell) => !used.has(`${cell.gridColumn}-${cell.gridRow}`)).slice(0, count);
+  };
+  const addRole = (role, count, preferredColumns) => {
+    const selectedCells = takeCells(preferredColumns, count);
+    selectedCells.forEach((cell, index) => {
+      used.add(`${cell.gridColumn}-${cell.gridRow}`);
+      slots.push({
+        id: `${role}-${index + 1}`,
+        role,
+        roleLabel: roleLabels[role],
+        index: index + 1,
+        label: `${roleLabels[role]} ${index + 1}`,
+        gridColumn: cell.gridColumn,
+        gridRow: cell.gridRow
+      });
+    });
+  };
+
+  addRole("tank", counts.tank, [4]);
+  addRole("healer", counts.healer, [5]);
+  addRole("dps", counts.dps, [1, 2, 3]);
+
+  return slots.sort((a, b) => a.gridColumn - b.gridColumn || a.gridRow - b.gridRow);
 }
 
 function getActivity(db, activityId) {
@@ -388,9 +419,9 @@ function normalizeCounts(input) {
   if (Object.values(counts).some((count) => count === null)) {
     throw new Error("位置数量必须是 0 到 25 的整数");
   }
-  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const total = counts.tank + counts.healer + counts.dps;
   if (total !== 25) {
-    throw new Error("四类位置数量合计必须等于 25");
+    throw new Error("输出、T、奶三类位置合计必须等于 25；老板名额不参与位置合计");
   }
   return counts;
 }
@@ -413,8 +444,10 @@ function normalizeActivity(body, currentActivity = {}) {
 }
 
 function normalizeSignup(body, role, qq) {
+  const isBoss = body.isBoss === true || body.isBoss === "true";
   const signup = {
     qq,
+    isBoss,
     spec: sanitizeText(body.spec, 30),
     signupId: sanitizeText(body.signupId, 40),
     buffStacks: "",
@@ -422,19 +455,16 @@ function normalizeSignup(body, role, qq) {
     note: ""
   };
 
-  if (!roleOptions[role] || !roleOptions[role].includes(signup.spec)) {
-    if (role === "boss") {
-      signup.spec = "老板";
-    } else {
-      throw new Error("请选择该位置可用的心法");
-    }
+  const availableSpecs = isBoss ? allSpecs : roleOptions[role];
+  if (!availableSpecs || !availableSpecs.includes(signup.spec)) {
+    throw new Error("请选择该位置可用的心法");
   }
 
   if (!signup.signupId) {
     throw new Error("请填写游戏 ID");
   }
 
-  if (role === "tank" || role === "healer") {
+  if (!isBoss && (role === "tank" || role === "healer")) {
     const stacks = Number(body.buffStacks);
     if (!Number.isInteger(stacks) || stacks < 0 || stacks > 999) {
       throw new Error("增益层数必须是 0 到 999 的整数");
@@ -442,7 +472,7 @@ function normalizeSignup(body, role, qq) {
     signup.buffStacks = String(stacks);
   }
 
-  if (role === "dps") {
+  if (!isBoss && role === "dps") {
     const gearScore = Number(body.gearScore);
     if (!Number.isInteger(gearScore) || gearScore < 0 || gearScore > 999999) {
       throw new Error("装分必须是 0 到 999999 的整数");
@@ -450,7 +480,7 @@ function normalizeSignup(body, role, qq) {
     signup.gearScore = String(gearScore);
   }
 
-  if (role === "boss") {
+  if (isBoss) {
     signup.note = sanitizeText(body.note, 80);
   }
 

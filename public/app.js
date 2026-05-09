@@ -1,8 +1,7 @@
-const roleOrder = ["tank", "healer", "boss", "dps"];
+const roleOrder = ["dps", "tank", "healer"];
 const roleLabels = {
   tank: "T",
   healer: "奶",
-  boss: "老板",
   dps: "输出"
 };
 
@@ -50,8 +49,7 @@ const elements = {
   tankCountInput: document.querySelector("#tankCountInput"),
   healerCountInput: document.querySelector("#healerCountInput"),
   bossCountInput: document.querySelector("#bossCountInput"),
-  dpsCountInput: document.querySelector("#dpsCountInput"),
-  countTotal: document.querySelector("#countTotal"),
+  dpsCountInput: document.querySelector("#dpsCountInput"),  countTotal: document.querySelector("#countTotal"),
   newActivityBtn: document.querySelector("#newActivityBtn"),
   activitySubmitBtn: document.querySelector("#activitySubmitBtn"),
   refreshAuditBtn: document.querySelector("#refreshAuditBtn"),
@@ -78,6 +76,8 @@ const elements = {
   gearScoreInput: document.querySelector("#gearScoreInput"),
   noteField: document.querySelector("#noteField"),
   noteInput: document.querySelector("#noteInput"),
+  bossToggleField: document.querySelector("#bossToggleField"),
+  isBossInput: document.querySelector("#isBossInput"),
   deleteSignupBtn: document.querySelector("#deleteSignupBtn"),
   adminDialog: document.querySelector("#adminDialog"),
   adminLoginForm: document.querySelector("#adminLoginForm"),
@@ -266,6 +266,7 @@ function renderSummary() {
   elements.statusPill.className = `status-pill ${activity.status}`;
 
   elements.summaryStats.innerHTML = roleOrder
+    .filter((role) => countRole(role) > 0)
     .map((role) => {
       const signed = signedCount(role);
       const drafting = draftingCount(role);
@@ -277,7 +278,12 @@ function renderSummary() {
         </div>
       `;
     })
-    .join("");
+    .join("") + (() => {
+      const bossCount = Object.values(appState.signups || {}).filter((s) => s && s.isBoss).length;
+      return bossCount > 0
+        ? `<div class="stat boss"><strong>👑 ${bossCount}</strong><span>老板出战</span></div>`
+        : "";
+    })();
 }
 
 function fillActivityForm(activity) {
@@ -291,7 +297,7 @@ function fillActivityForm(activity) {
       endTime: "",
       status: "active",
       creator: { name: currentUser?.displayName || "管理员", qq: currentUser?.qq || "" },
-      counts: { tank: 4, healer: 5, boss: 0, dps: 16 }
+      counts: { tank: 5, healer: 5, boss: 0, dps: 15 }
     };
 
   elements.activityIdInput.value = source.id || "";
@@ -303,10 +309,9 @@ function fillActivityForm(activity) {
   elements.startTimeInput.value = toLocalInputValue(source.startTime);
   elements.endTimeInput.value = toLocalInputValue(source.endTime);
   elements.statusInput.value = source.status || "active";
-  elements.tankCountInput.value = source.counts?.tank ?? 4;
+  elements.tankCountInput.value = source.counts?.tank ?? 5;
   elements.healerCountInput.value = source.counts?.healer ?? 5;
-  elements.bossCountInput.value = source.counts?.boss ?? 0;
-  elements.dpsCountInput.value = source.counts?.dps ?? 16;
+  elements.dpsCountInput.value = source.counts?.dps ?? 15;
   elements.activityFormTitle.textContent = source.id ? "编辑当前活动" : "创建新活动";
   elements.activitySubmitBtn.textContent = source.id ? "保存活动" : "创建活动";
   updateCountTotal();
@@ -333,29 +338,40 @@ function renderAdminPanel(options = {}) {
 }
 
 function renderBoard() {
-  const grouped = Object.fromEntries(roleOrder.map((role) => [role, []]));
-  for (const slot of appState.slots) {
-    grouped[slot.role].push(slot);
+  const slots = appState.slots; // 已按 gridColumn, gridRow 排序
+
+  // 按列分组
+  const byColumn = {};
+  for (const slot of slots) {
+    const col = slot.gridColumn;
+    if (!byColumn[col]) byColumn[col] = [];
+    byColumn[col].push(slot);
   }
 
-  elements.board.innerHTML = roleOrder
-    .filter((role) => grouped[role].length > 0)
-    .map((role) => {
-      const total = grouped[role].length;
-      const signed = grouped[role].filter((slot) => appState.signups[slot.id]).length;
-      const drafting = grouped[role].filter((slot) => appState.drafts?.[slot.id]).length;
-      const cards = grouped[role].map(renderSlot).join("");
+  const colHeaders = { 1: "输出一", 2: "输出二", 3: "输出三", 4: "T 位", 5: "奶 位" };
+  const colRoles = { 1: "dps", 2: "dps", 3: "dps", 4: "tank", 5: "healer" };
+
+  const colNums = Object.keys(byColumn).map(Number).sort((a, b) => a - b);
+
+  const html = `<div class="board-5x5">${colNums
+    .map((col) => {
+      const colSlots = byColumn[col];
+      const role = colRoles[col] || colSlots[0]?.role || "dps";
+      const signed = colSlots.filter((s) => appState.signups[s.id]).length;
+      const total = colSlots.length;
       return `
-        <div class="role-group">
-          <div class="role-head ${role}">
-            <h3>${roleLabels[role]}</h3>
-            <span>${signed}/${total} 已定 · ${drafting} 填写中</span>
+        <div class="board-col">
+          <div class="board-col-head ${role}">
+            <span class="col-label">${colHeaders[col] || ""}</span>
+            <span class="col-stat">${signed}/${total}</span>
           </div>
-          <div class="slot-grid">${cards}</div>
+          ${colSlots.map(renderSlot).join("")}
         </div>
       `;
     })
-    .join("");
+    .join("")}</div>`;
+
+  elements.board.innerHTML = html;
 
   for (const button of elements.board.querySelectorAll(".slot-card")) {
     button.addEventListener("click", () => openSignupDialog(button.dataset.slotId));
@@ -369,6 +385,7 @@ function renderSlot(slot) {
   const occupied = Boolean(signup);
   const drafting = Boolean(!signup && draft);
   const ownDraft = isOwnDraft(draft);
+  const isBoss = Boolean(signup?.isBoss);
   const status = occupied ? (owned ? "我的报名" : "已定") : drafting ? "填写中" : "空位";
   const action = getSlotAction(signup, draft, owned, ownDraft);
   const body = signup
@@ -377,12 +394,26 @@ function renderSlot(slot) {
       ? renderDraftBody(draft, ownDraft)
       : `<span class="slot-empty">虚席以待</span>`;
 
+  const classes = [
+    "slot-card",
+    occupied ? "occupied" : "",
+    owned ? "owned" : "",
+    drafting ? "drafting" : "",
+    ownDraft ? "own-draft" : "",
+    isBoss ? "is-boss" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const bossBadge = isBoss ? `<span class="boss-badge">👑 老板</span>` : "";
+
   return `
-    <button class="slot-card ${occupied ? "occupied" : ""} ${owned ? "owned" : ""} ${drafting ? "drafting" : ""} ${ownDraft ? "own-draft" : ""}" type="button" data-slot-id="${slot.id}">
+    <button class="${classes}" type="button" data-slot-id="${slot.id}">
       <span class="slot-top">
         <span class="slot-tag ${slot.role}">${slot.label}</span>
         <span class="slot-status">${status}</span>
       </span>
+      ${bossBadge}
       <span class="slot-body">${body}</span>
       <span class="slot-action">${action}</span>
     </button>
@@ -415,16 +446,16 @@ function renderDraftBody(draft, ownDraft) {
 function renderSignupBody(role, signup) {
   const meta = [];
   meta.push(`<span class="signup-chip">QQ ${escapeHtml(signup.qq)}</span>`);
-  if (role !== "boss" && signup.spec) {
+  if (signup.spec) {
     meta.push(`<span class="signup-chip spec">${escapeHtml(signup.spec)}</span>`);
   }
-  if (role === "tank" || role === "healer") {
+  if (!signup.isBoss && (role === "tank" || role === "healer") && signup.buffStacks !== "") {
     meta.push(`<span class="signup-chip">增益 ${escapeHtml(signup.buffStacks)}</span>`);
   }
-  if (role === "dps") {
+  if (!signup.isBoss && role === "dps" && signup.gearScore !== "") {
     meta.push(`<span class="signup-chip">装分 ${escapeHtml(signup.gearScore)}</span>`);
   }
-  if (role === "boss" && signup.note) {
+  if (signup.note) {
     meta.push(`<span class="signup-chip note">${escapeHtml(signup.note)}</span>`);
   }
 
@@ -480,9 +511,8 @@ function updateCountTotal() {
   const values = [
     elements.tankCountInput,
     elements.healerCountInput,
-    elements.bossCountInput,
     elements.dpsCountInput
-  ].map((input) => Number(input.value || 0));
+  ].filter(Boolean).map((input) => Number(input.value || 0));
   const total = values.reduce((sum, value) => sum + value, 0);
   elements.countTotal.textContent = `合计 ${total} / 25`;
   elements.countTotal.classList.toggle("invalid", total !== 25);
@@ -551,20 +581,31 @@ async function openSignupDialog(slotId) {
   elements.buffStacksInput.value = signup?.buffStacks || "0";
   elements.gearScoreInput.value = signup?.gearScore || "";
   elements.noteInput.value = signup?.note || "";
+  elements.isBossInput.checked = Boolean(signup?.isBoss);
   elements.deleteSignupBtn.hidden = !signup || !appState.isAdmin;
 
-  renderSpecOptions(slot.role, signup);
-  elements.specField.hidden = slot.role === "boss";
-  elements.buffField.hidden = !(slot.role === "tank" || slot.role === "healer");
-  elements.gearField.hidden = slot.role !== "dps";
-  elements.noteField.hidden = slot.role !== "boss";
+  function refreshDialogFields() {
+    const isBoss = elements.isBossInput.checked;
+    renderSpecOptions(slot.role, signup, isBoss);
+    elements.buffField.hidden = isBoss || !(slot.role === "tank" || slot.role === "healer");
+    elements.gearField.hidden = isBoss || slot.role !== "dps";
+    elements.noteField.hidden = !isBoss;
+  }
+
+  elements.isBossInput.onchange = refreshDialogFields;
+  refreshDialogFields();
 
   startDraftHeartbeat(slot.id);
   elements.signupDialog.showModal();
 }
 
-function renderSpecOptions(role, signup) {
-  const specs = appState.options.specs[role] || [];
+function renderSpecOptions(role, signup, isBoss = false) {
+  const allSpecs = [
+    ...appState.options.specs.tank,
+    ...appState.options.specs.healer,
+    ...appState.options.specs.dps
+  ];
+  const specs = isBoss ? allSpecs : (appState.options.specs[role] || []);
   elements.specInput.innerHTML = specs
     .map((spec) => `<option value="${escapeHtml(spec)}">${escapeHtml(spec)}</option>`)
     .join("");
@@ -645,11 +686,12 @@ async function submitSignup(event) {
     activityId: selectedSlotActivityId || selectedActivityId,
     qq: currentUser.qq,
     slotId: selectedSlot.id,
-    spec: selectedSlot.role === "boss" ? "老板" : elements.specInput.value,
+    spec: elements.specInput.value,
     signupId: elements.signupIdInput.value,
     buffStacks: elements.buffStacksInput.value || 0,
     gearScore: elements.gearScoreInput.value || 0,
-    note: elements.noteInput.value
+    note: elements.noteInput.value,
+    isBoss: elements.isBossInput.checked
   };
 
   try {
@@ -742,7 +784,7 @@ function activityFormPayload() {
     counts: {
       tank: Number(elements.tankCountInput.value),
       healer: Number(elements.healerCountInput.value),
-      boss: Number(elements.bossCountInput.value),
+      boss: 0,
       dps: Number(elements.dpsCountInput.value)
     }
   };
@@ -885,9 +927,8 @@ elements.adminLogoutBtn.addEventListener("click", adminLogout);
 for (const input of [
   elements.tankCountInput,
   elements.healerCountInput,
-  elements.bossCountInput,
   elements.dpsCountInput
-]) {
+].filter(Boolean)) {
   input.addEventListener("input", updateCountTotal);
 }
 

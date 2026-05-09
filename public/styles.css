@@ -599,6 +599,145 @@ select:focus {
   gap: 20px;
 }
 
+/* ─── 5列名册布局 ─── */
+.board-5x5 {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.board-col {
+  display: grid;
+  gap: 8px;
+}
+
+.board-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  color: #fffaf0;
+  font-weight: 900;
+}
+
+.board-col-head.dps {
+  background: linear-gradient(135deg, var(--violet), #4a2f70);
+}
+
+.board-col-head.tank {
+  background: linear-gradient(135deg, var(--indigo), #1e3358);
+}
+
+.board-col-head.healer {
+  background: linear-gradient(135deg, var(--jade), #145940);
+}
+
+.col-label {
+  font-size: 14px;
+}
+
+.col-stat {
+  font-size: 12px;
+  opacity: 0.82;
+  white-space: nowrap;
+}
+
+/* 5列布局下卡片更紧凑 */
+.board-5x5 .slot-card {
+  min-height: 148px;
+  padding: 10px;
+  gap: 7px;
+}
+
+/* ─── 老板卡片特殊样式 ─── */
+.slot-card.is-boss {
+  border: 2px solid var(--gold) !important;
+  background:
+    linear-gradient(160deg, rgba(255, 248, 195, 0.98), rgba(248, 225, 120, 0.88)),
+    var(--paper-light) !important;
+  box-shadow:
+    0 0 0 3px rgba(184, 135, 45, 0.22),
+    0 10px 26px rgba(120, 80, 0, 0.20) !important;
+}
+
+.slot-card.is-boss:hover {
+  border-color: #c89820 !important;
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 4px rgba(184, 135, 45, 0.32),
+    0 14px 30px rgba(120, 80, 0, 0.26) !important;
+}
+
+.boss-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  gap: 4px;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: linear-gradient(135deg, #d4a017, #7a4d0a);
+  color: #fff8dc;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 6px rgba(100, 60, 0, 0.30);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+/* ─── 老板身份开关（报名弹框内） ─── */
+.boss-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1.5px solid rgba(184, 135, 45, 0.38);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(255, 248, 195, 0.72), rgba(248, 230, 160, 0.50));
+  cursor: pointer;
+}
+
+.boss-toggle-row:hover {
+  border-color: var(--gold);
+  background: linear-gradient(135deg, rgba(255, 248, 195, 0.90), rgba(248, 230, 160, 0.70));
+}
+
+.boss-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.boss-toggle-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.boss-toggle-text {
+  font-weight: 900;
+  font-size: 15px;
+  color: #7a4d0a;
+}
+
+.boss-toggle-hint {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.boss-checkbox {
+  width: 20px !important;
+  min-height: 20px !important;
+  flex-shrink: 0;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
 .role-group {
   display: grid;
   gap: 10px;
@@ -896,6 +1035,15 @@ select:focus {
   .inline-form .primary-button {
     grid-column: 1 / -1;
   }
+
+  /* 平板：5列保持，但允许横向滚动 */
+  .board-section {
+    overflow-x: auto;
+  }
+
+  .board-5x5 {
+    min-width: 600px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -939,7 +1087,9 @@ select:focus {
     flex-direction: column;
   }
 
-  .slot-grid {
-    grid-template-columns: 1fr;
+  /* 手机：5列变为2列（左：输出，右：T+奶）并可横滚 */
+  .board-5x5 {
+    grid-template-columns: repeat(3, 1fr);
+    min-width: 0;
   }
 }
