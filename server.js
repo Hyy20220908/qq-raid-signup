@@ -196,20 +196,45 @@ function migrateDb(db) {
   };
 }
 
+// ─── 内存缓存 + 写入队列 ───
+let dbCache = null;
+let writeSerial = Promise.resolve();
+let dirty = false;
+const PERSIST_INTERVAL_MS = 30_000;
+
 function readDb() {
   ensureDb();
+  if (dbCache) return dbCache;
   const raw = fs.readFileSync(DB_PATH, "utf8");
-  return migrateDb(JSON.parse(raw));
+  dbCache = migrateDb(JSON.parse(raw));
+  return dbCache;
 }
 
 function writeDb(db) {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  const tmpPath = `${DB_PATH}.${process.pid}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(db, null, 2), "utf8");
-  fs.renameSync(tmpPath, DB_PATH);
+  dbCache = db;
+  dirty = true;
+  // 通过 Promise 链串行化磁盘写入，不阻塞 API 响应
+  writeSerial = writeSerial.then(() => {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const tmpPath = `${DB_PATH}.${process.pid}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(db, null, 2), "utf8");
+    fs.renameSync(tmpPath, DB_PATH);
+    dirty = false;
+  }).catch((err) => {
+    console.error("writeDb 持久化失败:", err);
+    dirty = true;
+  });
 }
+
+// 定时持久化：防止写队列积压时进程崩溃丢数据
+setInterval(() => {
+  if (dirty) {
+    const prev = writeSerial;
+    writeSerial = prev.then(() => { dirty = false; });
+  }
+}, PERSIST_INTERVAL_MS);
 
 function appendAudit(db, entry) {
   db.audit.unshift({
@@ -223,7 +248,7 @@ function appendAudit(db, entry) {
     after: entry.after || null,
     summary: entry.summary
   });
-  db.audit = db.audit.slice(0, 1000);
+  db.audit = db.audit.slice(0, 500);
 }
 
 function parseCookies(req) {
@@ -713,7 +738,7 @@ async function handleApi(req, res) {
       if (cleanupExpiredDrafts(db)) {
         writeDb(db);
       }
-      sendJson(res, 200, { ok: true, audit: db.audit.slice(0, 500) });
+      sendJson(res, 200, { ok: true, audit: db.audit.slice(0, 200) });
       return;
     }
 
