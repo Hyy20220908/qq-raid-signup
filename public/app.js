@@ -591,7 +591,8 @@ async function openSignupDialog(slotId) {
   elements.gearScoreInput.value = signup?.gearScore || "";
   elements.noteInput.value = signup?.note || "";
   elements.isBossInput.checked = Boolean(signup?.isBoss);
-  elements.deleteSignupBtn.hidden = !signup || !appState.isAdmin;
+  elements.deleteSignupBtn.hidden = !signup || !(appState.isAdmin || owned);
+  elements.deleteSignupBtn.textContent = owned && !appState.isAdmin ? "撤销我的报名" : "撤销报名";
 
   function refreshDialogFields() {
     const isBoss = elements.isBossInput.checked;
@@ -720,11 +721,19 @@ async function submitSignup(event) {
 }
 
 async function deleteSignup() {
-  if (!selectedSlot || !appState?.isAdmin) {
+  if (!selectedSlot || !currentUser) {
+    return;
+  }
+  const signup = appState?.signups?.[selectedSlot.id];
+  if (!signup) {
+    return;
+  }
+  const isOwner = signup.qq === currentUser.qq;
+  if (!appState?.isAdmin && !isOwner) {
     return;
   }
 
-  if (!confirm("确定撤销这个报名吗？")) {
+  if (!confirm(isOwner && !appState?.isAdmin ? "确定撤销自己的报名吗？" : "确定撤销这个报名吗？")) {
     return;
   }
 

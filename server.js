@@ -995,9 +995,10 @@ async function handleApi(req, res) {
     if (req.method === "DELETE" && url.pathname.startsWith("/api/signups/")) {
       const slotId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/signups/", "")), 30);
       const body = await readBody(req).catch(() => ({}));
+      const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
       const admin = isAdmin(req);
-      if (!admin) {
-        sendError(res, 403, "普通用户不能撤销已提交的报名，请联系管理员处理");
+      if (!qq) {
+        sendError(res, 401, "请先输入 QQ 号登录");
         return;
       }
 
@@ -1019,9 +1020,13 @@ async function handleApi(req, res) {
         sendError(res, 404, "这个位置还没有报名");
         return;
       }
+      if (!admin && before.qq !== qq) {
+        sendError(res, 403, "只能撤销自己的报名");
+        return;
+      }
       delete maps.signups[slotId];
       appendAudit(db, {
-        actor: "admin",
+        actor: admin ? "admin" : qq,
         action: "signup:delete",
         activityId: activity.id,
         target: slot.label,
