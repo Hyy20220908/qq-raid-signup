@@ -686,7 +686,7 @@ async function handleApi(req, res) {
       activity.createdAt = new Date().toISOString();
       activity.updatedAt = activity.createdAt;
       activity.updatedBy = "admin";
-      db.activities.unshift(activity);
+      db.activities.push(activity);
       db.signups[activity.id] = {};
       db.drafts[activity.id] = {};
       db.selectedActivityId = activity.id;
