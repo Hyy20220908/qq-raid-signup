@@ -22,6 +22,7 @@ const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.j
 const DATA_DIR = path.dirname(DB_PATH);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DRAFT_TTL_MS = 90 * 1000;
+const PASSWORD_HASH_ITERATIONS = 210_000;
 
 const tankSpecs = ["明尊", "洗髓", "铁牢", "铁骨"];
 const healerSpecs = ["云裳", "补天", "离经", "相知", "灵素"];
@@ -106,6 +107,7 @@ function defaultDb() {
     drafts: {
       [activity.id]: {}
     },
+    adminPassword: null,
     settings: defaultSettings(),
     audit: [
       {
@@ -121,6 +123,36 @@ function defaultDb() {
       }
     ]
   };
+}
+
+function hashAdminPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.pbkdf2Sync(password, salt, PASSWORD_HASH_ITERATIONS, 32, "sha256").toString("hex");
+  return {
+    algorithm: "pbkdf2-sha256",
+    iterations: PASSWORD_HASH_ITERATIONS,
+    salt,
+    hash,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function verifyPasswordHash(password, record) {
+  if (!record || record.algorithm !== "pbkdf2-sha256" || !record.salt || !record.hash) {
+    return false;
+  }
+  const iterations = Number(record.iterations || PASSWORD_HASH_ITERATIONS);
+  const expected = Buffer.from(record.hash, "hex");
+  const actual = crypto.pbkdf2Sync(password, record.salt, iterations, expected.length, "sha256");
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function verifyAdminPassword(db, password) {
+  const value = String(password || "");
+  if (db.adminPassword) {
+    return verifyPasswordHash(value, db.adminPassword);
+  }
+  return value === ADMIN_PASSWORD;
 }
 
 function defaultSettings() {
@@ -698,7 +730,8 @@ async function handleApi(req, res) {
 
     if (req.method === "POST" && url.pathname === "/api/admin/login") {
       const body = await readBody(req);
-      if (String(body.password || "") !== ADMIN_PASSWORD) {
+      const db = readDb();
+      if (!verifyAdminPassword(db, body.password)) {
         sendError(res, 401, "管理员密码不正确");
         return;
       }
@@ -816,16 +849,46 @@ async function handleApi(req, res) {
         return;
       }
       const body = await readBody(req);
-      const password = String(body.password || "").trim();
-      if (!password || password.length < 4) {
-        sendError(res, 400, "密码长度至少4位");
+      const currentPassword = String(body.currentPassword || "");
+      const newPassword = String(body.newPassword || body.password || "").trim();
+      const confirmPassword = String(body.confirmPassword || newPassword).trim();
+      if (!newPassword || newPassword.length < 6) {
+        sendError(res, 400, "新密码长度至少 6 位");
         return;
       }
-      // 修改密码需要重启服务生效，保存到环境变量文件
-      const envPath = path.join(__dirname, ".env");
-      const envContent = `ADMIN_PASSWORD=${password}\n`;
-      fs.writeFileSync(envPath, envContent, "utf8");
-      sendJson(res, 200, { ok: true, message: "密码已保存，重启服务后生效" });
+      if (newPassword !== confirmPassword) {
+        sendError(res, 400, "两次输入的新密码不一致");
+        return;
+      }
+      const db = readDb();
+      if (!verifyAdminPassword(db, currentPassword)) {
+        sendError(res, 403, "当前管理员密码不正确");
+        return;
+      }
+
+      db.adminPassword = hashAdminPassword(newPassword);
+      appendAudit(db, {
+        actor: "admin",
+        action: "admin:password-update",
+        activityId: db.selectedActivityId,
+        target: "管理员密码",
+        before: null,
+        after: { updatedAt: db.adminPassword.updatedAt },
+        summary: "更新管理员密码"
+      });
+      writeDb(db);
+
+      const token = crypto.randomBytes(32).toString("hex");
+      adminTokens.clear();
+      adminTokens.add(token);
+      sendJson(
+        res,
+        200,
+        { ok: true, message: "管理员密码已更新" },
+        {
+          "Set-Cookie": `adminToken=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=28800`
+        }
+      );
       return;
     }
 

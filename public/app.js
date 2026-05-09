@@ -101,6 +101,10 @@ const elements = {
   logoPreview: document.querySelector("#logoPreview"),
   logoPreviewImg: document.querySelector("#logoPreviewImg"),
   removeLogoBtn: document.querySelector("#removeLogoBtn"),
+  adminPasswordForm: document.querySelector("#adminPasswordForm"),
+  currentAdminPasswordInput: document.querySelector("#currentAdminPasswordInput"),
+  newAdminPasswordInput: document.querySelector("#newAdminPasswordInput"),
+  confirmAdminPasswordInput: document.querySelector("#confirmAdminPasswordInput"),
   toast: document.querySelector("#toast")
 };
 
@@ -466,6 +470,42 @@ async function saveSettings() {
     settingsFormDirty = false;
     renderAll({ preserveAdminForm: true, skipAudit: true });
     showToast("品牌设置已保存");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function changeAdminPassword(event) {
+  event.preventDefault();
+  if (!appState?.isAdmin) {
+    return;
+  }
+
+  const currentPassword = elements.currentAdminPasswordInput.value;
+  const newPassword = elements.newAdminPasswordInput.value.trim();
+  const confirmPassword = elements.confirmAdminPasswordInput.value.trim();
+  if (newPassword.length < 6) {
+    showToast("新密码长度至少 6 位");
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    showToast("两次输入的新密码不一致");
+    return;
+  }
+
+  try {
+    await api("/api/admin/password", {
+      method: "POST",
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+        confirmPassword
+      })
+    });
+    elements.adminPasswordForm.reset();
+    auditLoadedOnce = false;
+    await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
+    showToast("管理员密码已修改", "success");
   } catch (error) {
     showToast(error.message);
   }
@@ -1143,6 +1183,7 @@ elements.signupForm.addEventListener("submit", submitSignup);
 elements.deleteSignupBtn.addEventListener("click", deleteSignup);
 elements.adminLoginForm.addEventListener("submit", submitAdminLogin);
 elements.activityForm.addEventListener("submit", submitActivity);
+elements.adminPasswordForm.addEventListener("submit", changeAdminPassword);
 elements.refreshAuditBtn.addEventListener("click", loadAudit);
 elements.clearActivityBtn.addEventListener("click", clearActivitySignups);
 elements.adminLogoutBtn.addEventListener("click", logoutAdmin);
