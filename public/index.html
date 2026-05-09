@@ -10,7 +10,10 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="brand-block">
-          <span id="brandLogo" class="brand-mark" aria-hidden="true">令</span>
+          <span id="brandLogo" class="brand-mark" aria-hidden="true">
+            <span id="brandLogoText">令</span>
+            <img id="brandLogoImg" src="" alt="Logo" hidden />
+          </span>
           <div>
             <h1 id="brandTitle">团本召集令</h1>
             <p id="brandSubtitle">剑网3 · 副本活动报名</p>
@@ -134,10 +137,18 @@
               <details class="settings-panel">
                 <summary class="settings-summary">自定义品牌</summary>
                 <div class="settings-form">
-                  <label>
-                    <span>Logo（文字或 emoji）</span>
-                    <input id="settingsBrandLogo" maxlength="8" placeholder="令" />
-                  </label>
+                  <div class="setting-section">
+                    <span class="setting-label">Logo 图片</span>
+                    <p class="setting-hint">上传自定义图片，适配 52×52 区域</p>
+                    <div class="logo-upload-row">
+                      <input id="settingsLogoFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" />
+                      <button id="uploadLogoBtn" class="primary-button" type="button">上传</button>
+                    </div>
+                    <div id="logoPreview" class="logo-preview" hidden>
+                      <img id="logoPreviewImg" src="" alt="Logo 预览" />
+                      <button id="removeLogoBtn" class="danger-button" type="button">移除图片</button>
+                    </div>
+                  </div>
                   <label>
                     <span>品牌标题</span>
                     <input id="settingsBrandTitle" maxlength="40" placeholder="团本召集令" />

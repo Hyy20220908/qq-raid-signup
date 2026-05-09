@@ -84,14 +84,20 @@ const elements = {
   closeAdminDialogBtn: document.querySelector("#closeAdminDialogBtn"),
   deleteActivityBtn: document.querySelector("#deleteActivityBtn"),
   brandLogo: document.querySelector("#brandLogo"),
+  brandLogoText: document.querySelector("#brandLogoText"),
+  brandLogoImg: document.querySelector("#brandLogoImg"),
   brandTitle: document.querySelector("#brandTitle"),
   brandSubtitle: document.querySelector("#brandSubtitle"),
-  settingsBrandLogo: document.querySelector("#settingsBrandLogo"),
   settingsBrandTitle: document.querySelector("#settingsBrandTitle"),
   settingsBrandSubtitle: document.querySelector("#settingsBrandSubtitle"),
   settingsBgColor: document.querySelector("#settingsBgColor"),
   bgColorPreview: document.querySelector("#bgColorPreview"),
   saveSettingsBtn: document.querySelector("#saveSettingsBtn"),
+  settingsLogoFile: document.querySelector("#settingsLogoFile"),
+  uploadLogoBtn: document.querySelector("#uploadLogoBtn"),
+  logoPreview: document.querySelector("#logoPreview"),
+  logoPreviewImg: document.querySelector("#logoPreviewImg"),
+  removeLogoBtn: document.querySelector("#removeLogoBtn"),
   toast: document.querySelector("#toast")
 };
 
@@ -352,11 +358,71 @@ function fillSettingsForm() {
     return;
   }
   const s = appState.settings;
-  elements.settingsBrandLogo.value = s.brandLogo || "";
   elements.settingsBrandTitle.value = s.brandTitle || "";
   elements.settingsBrandSubtitle.value = s.brandSubtitle || "";
   elements.settingsBgColor.value = s.bgColor || "";
   updateBgPreview();
+  updateLogoPreview();
+}
+
+function updateLogoPreview() {
+  if (!appState?.settings) {
+    return;
+  }
+  const path = appState.settings.brandLogoPath;
+  if (path) {
+    elements.logoPreviewImg.src = path;
+    elements.logoPreview.hidden = false;
+  } else {
+    elements.logoPreview.hidden = true;
+  }
+}
+
+async function uploadLogo() {
+  const file = elements.settingsLogoFile.files?.[0];
+  if (!file) {
+    showToast("请先选择一张图片");
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    showToast("图片大小不能超过 2MB");
+    return;
+  }
+  try {
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const payload = await api("/api/settings/logo", {
+      method: "POST",
+      body: JSON.stringify({ image: base64 })
+    });
+    appState.settings.brandLogoPath = payload.logoPath;
+    renderAll({ preserveAdminForm: true, skipAudit: true });
+    elements.settingsLogoFile.value = "";
+    showToast("Logo 已上传");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function removeLogo() {
+  if (!confirm("确定移除自定义 Logo 图片吗？将恢复默认文字 Logo。")) {
+    return;
+  }
+  try {
+    const payload = await api("/api/settings/logo", {
+      method: "POST",
+      body: JSON.stringify({ image: "" })
+    });
+    appState.settings.brandLogoPath = "";
+    renderAll({ preserveAdminForm: true, skipAudit: true });
+    showToast("Logo 已移除");
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function updateBgPreview() {
@@ -539,7 +605,15 @@ function renderBrand() {
     return;
   }
   const s = appState.settings;
-  elements.brandLogo.textContent = s.brandLogo || "令";
+  if (s.brandLogoPath) {
+    elements.brandLogoText.hidden = true;
+    elements.brandLogoImg.hidden = false;
+    elements.brandLogoImg.src = s.brandLogoPath;
+  } else {
+    elements.brandLogoText.hidden = false;
+    elements.brandLogoImg.hidden = true;
+    elements.brandLogoText.textContent = s.brandLogo || "令";
+  }
   elements.brandTitle.textContent = s.brandTitle || "团本召集令";
   elements.brandSubtitle.textContent = s.brandSubtitle || "";
 }
@@ -1004,6 +1078,8 @@ elements.activityForm.addEventListener("submit", submitActivity);
 elements.refreshAuditBtn.addEventListener("click", loadAudit);
 elements.deleteActivityBtn.addEventListener("click", deleteActivity);
 elements.saveSettingsBtn.addEventListener("click", saveSettings);
+elements.uploadLogoBtn.addEventListener("click", uploadLogo);
+elements.removeLogoBtn.addEventListener("click", removeLogo);
 elements.settingsBgColor.addEventListener("input", updateBgPreview);
 
 for (const input of [

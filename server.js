@@ -128,7 +128,8 @@ function defaultSettings() {
     brandLogo: "令",
     brandTitle: "团本召集令",
     brandSubtitle: "剑网3 · 副本活动报名",
-    bgColor: "#2a211b"
+    bgColor: "#2a211b",
+    brandLogoPath: ""
   };
 }
 
@@ -581,6 +582,32 @@ function contentTypeFor(filePath) {
     ".ico": "image/x-icon"
   };
   return types[ext] || "application/octet-stream";
+}
+
+function serveLogo(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const requestedPath = decodeURIComponent(url.pathname);
+  const safeRelative = requestedPath.replace("/logos/", "");
+  const safePath = path.normalize(path.join(DATA_DIR, "logos", safeRelative));
+
+  if (!safePath.startsWith(path.join(DATA_DIR, "logos"))) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+
+  fs.readFile(safePath, (error, content) => {
+    if (error) {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Not found");
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": contentTypeFor(safePath),
+      "Cache-Control": "public, max-age=86400"
+    });
+    res.end(content);
+  });
 }
 
 function serveStatic(req, res) {
@@ -1084,6 +1111,77 @@ async function handleApi(req, res) {
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/settings/logo") {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
+      const body = await readBody(req);
+      const imageData = String(body.image || "");
+      const db = readDb();
+      db.settings = db.settings || defaultSettings();
+
+      // 空 image = 移除 logo
+      if (!imageData) {
+        const previousPath = db.settings.brandLogoPath;
+        if (previousPath) {
+          const oldFilePath = path.join(DATA_DIR, "logos", path.basename(previousPath));
+          try { fs.unlinkSync(oldFilePath); } catch {}
+        }
+        db.settings.brandLogoPath = "";
+        appendAudit(db, {
+          actor: "admin",
+          action: "settings:logo-remove",
+          activityId: db.selectedActivityId,
+          target: "Logo 图片",
+          before: { path: previousPath },
+          after: null,
+          summary: "移除自定义 Logo 图片"
+        });
+        writeDb(db);
+        sendJson(res, 200, { ok: true, logoPath: "" });
+        return;
+      }
+
+      const match = imageData.match(/^data:image\/(png|jpeg|jpg|gif|webp);base64,(.+)$/);
+      if (!match) {
+        sendError(res, 400, "图片格式不支持，仅支持 png/jpg/gif/webp");
+        return;
+      }
+      const ext = match[1] === "jpeg" ? "jpg" : match[1];
+      const base64 = match[2];
+      const buffer = Buffer.from(base64, "base64");
+      if (buffer.length > 2 * 1024 * 1024) {
+        sendError(res, 400, "图片大小不能超过 2MB");
+        return;
+      }
+      const logosDir = path.join(DATA_DIR, "logos");
+      if (!fs.existsSync(logosDir)) {
+        fs.mkdirSync(logosDir, { recursive: true });
+      }
+      const filename = `${crypto.randomUUID()}.${ext}`;
+      const filePath = path.join(logosDir, filename);
+      fs.writeFileSync(filePath, buffer);
+      const previousPath = db.settings.brandLogoPath;
+      db.settings.brandLogoPath = `/logos/${filename}`;
+      if (previousPath) {
+        const oldFilePath = path.join(DATA_DIR, "logos", path.basename(previousPath));
+        try { fs.unlinkSync(oldFilePath); } catch {}
+      }
+      appendAudit(db, {
+        actor: "admin",
+        action: "settings:logo",
+        activityId: db.selectedActivityId,
+        target: "Logo 图片",
+        before: { path: previousPath },
+        after: { path: db.settings.brandLogoPath },
+        summary: "上传自定义 Logo 图片"
+      });
+      writeDb(db);
+      sendJson(res, 200, { ok: true, logoPath: db.settings.brandLogoPath });
+      return;
+    }
+
     sendError(res, 404, "接口不存在");
   } catch (error) {
     sendError(res, 400, error.message || "请求处理失败");
@@ -1093,6 +1191,10 @@ async function handleApi(req, res) {
 const server = http.createServer((req, res) => {
   if (req.url.startsWith("/api/")) {
     handleApi(req, res);
+    return;
+  }
+  if (req.url.startsWith("/logos/")) {
+    serveLogo(req, res);
     return;
   }
   serveStatic(req, res);
