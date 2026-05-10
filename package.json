@@ -4,7 +4,7 @@
   "private": true,
   "description": "QQ群副本活动公共报名网页应用",
   "scripts": {
-    "prebuild": "mkdir -p data",
+    "build": "node -e \"require('fs').mkdirSync('data', { recursive: true })\"",
     "start": "node server.js"
   },
   "engines": {

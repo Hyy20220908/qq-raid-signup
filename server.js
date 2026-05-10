@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const zlib = require("zlib");
 
 const PORT = Number(process.env.PORT || 3001);
 
@@ -26,6 +27,8 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const DRAFT_TTL_MS = 90 * 1000;
 const PASSWORD_HASH_ITERATIONS = 210_000;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
+const BOOT_ID = crypto.randomBytes(8).toString("hex");
+const SLOW_API_MS = Number(process.env.SLOW_API_MS || 1000);
 
 const tankSpecs = ["明尊", "洗髓", "铁牢", "铁骨"];
 const healerSpecs = ["云裳", "补天", "离经", "相知", "灵素"];
@@ -313,7 +316,13 @@ function migrateDb(db) {
 let dbCache = null;
 let writeSerial = Promise.resolve();
 let dirty = false;
+let stateRevision = 1;
 const PERSIST_INTERVAL_MS = 30_000;
+
+function bumpStateRevision() {
+  stateRevision += 1;
+  return stateRevision;
+}
 
 function readDb() {
   ensureDb();
@@ -325,6 +334,7 @@ function readDb() {
 
 function writeDb(db) {
   dbCache = db;
+  bumpStateRevision();
   dirty = true;
   // 通过 Promise 链串行化磁盘写入，不阻塞 API 响应
   writeSerial = writeSerial.then(() => {
@@ -383,13 +393,56 @@ function isAdmin(req) {
   return Boolean(cookies.adminToken && adminTokens.has(cookies.adminToken));
 }
 
+function acceptsGzip(req) {
+  return /\bgzip\b/.test(req?.headers?.["accept-encoding"] || "");
+}
+
+function isCompressible(headers, body) {
+  const contentType = String(headers["Content-Type"] || headers["content-type"] || "");
+  return body.length >= 1024 && /json|javascript|text|svg|css|html/i.test(contentType);
+}
+
+function sendBody(req, res, status, headers, body) {
+  let payload = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
+  const nextHeaders = { ...headers };
+
+  if (acceptsGzip(req) && isCompressible(nextHeaders, payload)) {
+    payload = zlib.gzipSync(payload);
+    nextHeaders["Content-Encoding"] = "gzip";
+    nextHeaders.Vary = nextHeaders.Vary ? `${nextHeaders.Vary}, Accept-Encoding` : "Accept-Encoding";
+  }
+
+  nextHeaders["Content-Length"] = payload.length;
+  res.writeHead(status, nextHeaders);
+  res.end(payload);
+}
+
+function requestHasEtag(req, etag) {
+  const value = req.headers["if-none-match"];
+  if (!value) {
+    return false;
+  }
+  return value.split(",").map((item) => item.trim()).includes(etag);
+}
+
+function sendNotModified(res, extraHeaders = {}) {
+  res.writeHead(304, {
+    "Cache-Control": "private, no-cache",
+    ...extraHeaders
+  });
+  res.end();
+}
+
+function stateEtag(activityId, admin) {
+  return `"state-${BOOT_ID}-${stateRevision}-${activityId || "default"}-${admin ? "admin" : "user"}"`;
+}
+
 function sendJson(res, status, payload, extraHeaders = {}) {
-  res.writeHead(status, {
+  sendBody(res._request, res, status, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     ...extraHeaders
-  });
-  res.end(JSON.stringify(payload));
+  }, JSON.stringify(payload));
 }
 
 function sendError(res, status, message) {
@@ -688,7 +741,6 @@ function activitySummary(db, activity) {
 function publicState(db, req, activityId) {
   const activity = getActivity(db, activityId);
   const maps = getActivityMaps(db, activity.id);
-  db.selectedActivityId = activity.id;
   return {
     ok: true,
     selectedActivityId: activity.id,
@@ -724,6 +776,43 @@ function contentTypeFor(filePath) {
   return types[ext] || "application/octet-stream";
 }
 
+function staticEtag(stat) {
+  return `"static-${stat.size}-${Math.floor(stat.mtimeMs)}"`;
+}
+
+function sendFile(req, res, filePath, cacheControl) {
+  fs.stat(filePath, (statError, stat) => {
+    if (statError || !stat.isFile()) {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Not found");
+      return;
+    }
+
+    const etag = staticEtag(stat);
+    const headers = {
+      "Content-Type": contentTypeFor(filePath),
+      "Cache-Control": cacheControl,
+      ETag: etag,
+      "Last-Modified": stat.mtime.toUTCString()
+    };
+
+    if (requestHasEtag(req, etag)) {
+      res.writeHead(304, headers);
+      res.end();
+      return;
+    }
+
+    fs.readFile(filePath, (readError, content) => {
+      if (readError) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Not found");
+        return;
+      }
+      sendBody(req, res, 200, headers, content);
+    });
+  });
+}
+
 function serveLogo(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const requestedPath = decodeURIComponent(url.pathname);
@@ -736,18 +825,7 @@ function serveLogo(req, res) {
     return;
   }
 
-  fs.readFile(safePath, (error, content) => {
-    if (error) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Not found");
-      return;
-    }
-    res.writeHead(200, {
-      "Content-Type": contentTypeFor(safePath),
-      "Cache-Control": "public, max-age=86400"
-    });
-    res.end(content);
-  });
+  sendFile(req, res, safePath, "public, max-age=86400, immutable");
 }
 
 function serveStatic(req, res) {
@@ -762,32 +840,68 @@ function serveStatic(req, res) {
     return;
   }
 
-  fs.readFile(filePath, (error, content) => {
-    if (error) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Not found");
-      return;
-    }
-    res.writeHead(200, {
-      "Content-Type": contentTypeFor(filePath),
-      "Cache-Control": "no-store"
-    });
-    res.end(content);
-  });
+  const isHtml = path.extname(filePath).toLowerCase() === ".html";
+  sendFile(req, res, filePath, isHtml ? "no-cache" : "public, max-age=0, must-revalidate");
 }
 
 async function handleApi(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const requestId = crypto.randomUUID();
+  const startedAt = process.hrtime.bigint();
+
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    if (durationMs >= SLOW_API_MS) {
+      logEvent("warn", "slow_api_request", {
+        requestId,
+        method: req.method,
+        path: url.pathname,
+        status: res.statusCode,
+        durationMs: Math.round(durationMs)
+      });
+    }
+  });
 
   try {
+    if (req.method === "GET" && url.pathname === "/api/health") {
+      const db = readDb();
+      sendJson(res, 200, {
+        ok: true,
+        uptimeSec: Math.round(process.uptime()),
+        revision: stateRevision,
+        activities: Array.isArray(db.activities) ? db.activities.length : 0,
+        selectedActivityId: db.selectedActivityId || "",
+        memory: {
+          rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+          heapUsedMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+        },
+        storage: {
+          persistentPathConfigured: Boolean(process.env.DB_PATH),
+          logFileConfigured: Boolean(process.env.LOG_FILE)
+        },
+        node: process.version
+      }, {
+        "Cache-Control": "no-store"
+      });
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/state") {
       const db = readDb();
       const activityId = url.searchParams.get("activityId") || "";
       if (cleanupExpiredDrafts(db)) {
         writeDb(db);
       }
-      sendJson(res, 200, publicState(db, req, activityId));
+      const payload = publicState(db, req, activityId);
+      const etag = stateEtag(payload.selectedActivityId, isAdmin(req));
+      if (requestHasEtag(req, etag)) {
+        sendNotModified(res, { ETag: etag });
+        return;
+      }
+      sendJson(res, 200, payload, {
+        "Cache-Control": "private, no-cache",
+        ETag: etag
+      });
       return;
     }
 
@@ -1371,6 +1485,7 @@ async function handleApi(req, res) {
 }
 
 const server = http.createServer((req, res) => {
+  res._request = req;
   if (req.url.startsWith("/api/")) {
     handleApi(req, res).catch((error) => {
       logError("api_unhandled_rejection", error, {
@@ -1450,7 +1565,9 @@ server.listen(PORT, () => {
   logEvent("info", "server_started", {
     port: PORT,
     dbPath: DB_PATH,
-    logFile: LOG_FILE
+    logFile: LOG_FILE,
+    bootId: BOOT_ID,
+    slowApiMs: SLOW_API_MS
   });
   if (!process.env.ADMIN_PASSWORD) {
     logEvent("warn", "default_admin_password_enabled", {

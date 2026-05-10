@@ -12,10 +12,16 @@ let selectedSlot = null;
 let selectedSlotActivityId = "";
 let draftHeartbeat = null;
 let refreshTimer = null;
+let refreshDelay = 8000;
+let stateEtag = "";
+let autoRefreshInFlight = false;
 let auditLoadedOnce = false;
 let isCreatingActivity = false;
 let adminPanelVisible = localStorage.getItem("adminPanelVisible") === "true";
 let settingsFormDirty = false;
+
+const MIN_REFRESH_DELAY = 8000;
+const MAX_REFRESH_DELAY = 30000;
 
 const elements = {
   // activitySubtitle was renamed to brandSubtitle in branding commit
@@ -126,19 +132,71 @@ function saveUser(user) {
   renderUser();
 }
 
+async function fetchWithTimeout(path, options = {}) {
+  const {
+    timeoutMs = 15000,
+    headers = {},
+    ...fetchOptions
+  } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(path, {
+      ...fetchOptions,
+      headers,
+      credentials: "same-origin",
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("请求超时，请稍后重试");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const { headers = {}, ...fetchOptions } = options;
+  const response = await fetchWithTimeout(path, {
+    ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
-    credentials: "same-origin",
-    ...options
+      ...headers
+    }
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) {
     throw new Error(payload.error || "请求失败");
   }
+  return payload;
+}
+
+async function fetchState(path) {
+  const headers = {
+    "Content-Type": "application/json"
+  };
+  if (stateEtag) {
+    headers["If-None-Match"] = stateEtag;
+  }
+
+  const response = await fetchWithTimeout(path, {
+    headers,
+    timeoutMs: 10000
+  });
+
+  if (response.status === 304) {
+    return null;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || "请求失败");
+  }
+
+  stateEtag = response.headers.get("ETag") || "";
   return payload;
 }
 
@@ -694,12 +752,17 @@ function renderAll(options = {}) {
 async function loadState(options = {}) {
   const id = options.activityId ?? selectedActivityId;
   const query = id ? `?activityId=${encodeURIComponent(id)}` : "";
-  appState = await api(`/api/state${query}`);
+  const payload = await fetchState(`/api/state${query}`);
+  if (!payload) {
+    return false;
+  }
+  appState = payload;
   selectedActivityId = appState.selectedActivityId;
   if (selectedActivityId) {
     localStorage.setItem("selectedActivityId", selectedActivityId);
   }
   renderAll(options);
+  return true;
 }
 
 async function selectActivity(activityId) {
@@ -1133,17 +1196,38 @@ async function logoutAdmin() {
 }
 
 function startAutoRefresh() {
-  clearInterval(refreshTimer);
-  refreshTimer = setInterval(async () => {
-    if (document.hidden) {
-      return;
-    }
-    try {
-      await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
-    } catch {
-      // 下一轮刷新会继续尝试。
-    }
-  }, 5000);
+  clearTimeout(refreshTimer);
+  refreshDelay = MIN_REFRESH_DELAY;
+  scheduleAutoRefresh(refreshDelay);
+}
+
+function scheduleAutoRefresh(delay = refreshDelay) {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(runAutoRefresh, delay);
+}
+
+function resetAutoRefreshDelay() {
+  refreshDelay = MIN_REFRESH_DELAY;
+}
+
+async function runAutoRefresh() {
+  if (document.hidden || autoRefreshInFlight) {
+    scheduleAutoRefresh(refreshDelay);
+    return;
+  }
+
+  autoRefreshInFlight = true;
+  try {
+    const changed = await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
+    refreshDelay = changed
+      ? MIN_REFRESH_DELAY
+      : Math.min(MAX_REFRESH_DELAY, Math.round(refreshDelay * 1.5));
+  } catch {
+    refreshDelay = Math.min(MAX_REFRESH_DELAY, Math.round(refreshDelay * 1.5));
+  } finally {
+    autoRefreshInFlight = false;
+    scheduleAutoRefresh(refreshDelay);
+  }
 }
 
 elements.loginForm.addEventListener("submit", submitLogin);
@@ -1156,10 +1240,12 @@ elements.logoutBtn.addEventListener("click", async () => {
   showToast("已登出");
 });
 elements.refreshActivitiesBtn.addEventListener("click", async () => {
+  resetAutoRefreshDelay();
   await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
   showToast("活动列表已刷新");
 });
 elements.refreshBtn.addEventListener("click", async () => {
+  resetAutoRefreshDelay();
   await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
   showToast("名册已刷新");
 });
@@ -1197,6 +1283,13 @@ elements.saveSettingsBtn.addEventListener("click", saveSettings);
 elements.uploadLogoBtn.addEventListener("click", uploadLogo);
 elements.removeLogoBtn.addEventListener("click", removeLogo);
 elements.settingsBgColor.addEventListener("input", updateBgPreview);
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    resetAutoRefreshDelay();
+    scheduleAutoRefresh(250);
+  }
+});
 
 for (const input of [
   elements.settingsBrandTitle,
