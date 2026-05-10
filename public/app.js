@@ -621,7 +621,7 @@ function renderSlot(slot) {
   const drafting = Boolean(!signup && draft);
   const ownDraft = isOwnDraft(draft);
   const isBoss = Boolean(signup?.isBoss);
-  const status = occupied ? (owned ? "我的报名" : "已定") : drafting ? "填写中" : "空位";
+  const status = isBoss ? "老板" : occupied ? (owned ? "我的报名" : "已定") : drafting ? "填写中" : "空位";
   const action = getSlotAction(signup, draft, owned, ownDraft);
   const body = signup
     ? renderSignupBody(slot.role, signup)
@@ -640,18 +640,13 @@ function renderSlot(slot) {
     .filter(Boolean)
     .join(" ");
 
-  const bossBadge = isBoss ? `<span class="boss-badge">👑 老板</span>` : "";
-
-  // 老板徽章放入 slot-body 内，避免多出一个 grid 子项打乱 1fr 分配
-  const bodyWithBadge = bossBadge ? `${bossBadge}${body}` : body;
-
   return `
     <button class="${classes}" type="button" data-slot-id="${slot.id}">
       <span class="slot-top">
         <span class="slot-tag ${slot.role}">${slot.label}</span>
         <span class="slot-status">${status}</span>
       </span>
-      <span class="slot-body">${bodyWithBadge}</span>
+      <span class="slot-body">${body}</span>
       <span class="slot-action">${action}</span>
     </button>
   `;
@@ -659,30 +654,29 @@ function renderSlot(slot) {
 
 function getSlotAction(signup, draft, owned, ownDraft) {
   if (!currentUser) {
-    return "登录后可报名";
+    return "登录报名";
   }
   if (signup) {
     if (appState.isAdmin) {
-      return "管理员调整";
+      return "调整";
     }
-    return owned ? "修改报名" : "查看信息";
+    return owned ? "修改" : "查看";
   }
   if (draft && !ownDraft) {
-    return `${escapeHtml(displayActor(draft))}正在填写中`;
+    return "填写中";
   }
-  return ownDraft ? "继续填写" : "填写报名";
+  return ownDraft ? "继续" : "填写";
 }
 
 function renderDraftBody(draft, ownDraft) {
   return `
     <span class="slot-id">${ownDraft ? "你正在填写" : "填写中"}</span>
-    <span class="slot-detail">${escapeHtml(displayActor(draft))}正在填写中，稍后自动释放。</span>
+    <span class="slot-detail">${escapeHtml(displayActor(draft))}</span>
   `;
 }
 
 function renderSignupBody(role, signup) {
   const meta = [];
-  meta.push(`<span class="signup-chip">QQ ${escapeHtml(signup.qq)}</span>`);
   if (signup.spec) {
     meta.push(`<span class="signup-chip spec">${escapeHtml(signup.spec)}</span>`);
   }
@@ -698,7 +692,6 @@ function renderSignupBody(role, signup) {
 
   return `
     <span class="signup-summary">
-      <span class="signup-label">游戏 ID</span>
       <span class="slot-id">${escapeHtml(signup.signupId)}</span>
       <span class="slot-detail">${meta.join("")}</span>
     </span>
