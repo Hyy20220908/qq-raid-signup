@@ -37,6 +37,7 @@ const DRAFT_TTL_MS = 90 * 1000;
 const PASSWORD_HASH_ITERATIONS = 210_000;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const BOOT_ID = crypto.randomBytes(8).toString("hex");
+const ASSET_VERSION = encodeURIComponent(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || BOOT_ID);
 const SLOW_API_MS = Number(process.env.SLOW_API_MS || 1000);
 
 const tankSpecs = ["明尊", "洗髓", "铁牢", "铁骨"];
@@ -328,11 +329,29 @@ let dbCache = null;
 let writeSerial = Promise.resolve();
 let dirty = false;
 let stateRevision = 1;
+const eventClients = new Set();
 const PERSIST_INTERVAL_MS = 30_000;
 
 function bumpStateRevision() {
   stateRevision += 1;
+  notifyStateChanged();
   return stateRevision;
+}
+
+function writeSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function notifyStateChanged() {
+  const data = { revision: stateRevision };
+  for (const res of eventClients) {
+    try {
+      writeSse(res, "state", data);
+    } catch {
+      eventClients.delete(res);
+    }
+  }
 }
 
 function readDb() {
@@ -833,7 +852,8 @@ function publicState(db, req, activityId) {
       specs: roleOptions
     },
     isAdmin: isAdmin(req),
-    settings: db.settings || defaultSettings()
+    settings: db.settings || defaultSettings(),
+    revision: stateRevision
   };
 }
 
@@ -892,6 +912,39 @@ function sendFile(req, res, filePath, cacheControl) {
   });
 }
 
+function sendIndexHtml(req, res, filePath) {
+  fs.stat(filePath, (statError, stat) => {
+    if (statError || !stat.isFile()) {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Not found");
+      return;
+    }
+
+    const etag = `"index-${ASSET_VERSION}-${stat.size}-${Math.floor(stat.mtimeMs)}"`;
+    const headers = {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache",
+      ETag: etag,
+      "Last-Modified": stat.mtime.toUTCString()
+    };
+
+    if (requestHasEtag(req, etag)) {
+      res.writeHead(304, headers);
+      res.end();
+      return;
+    }
+
+    fs.readFile(filePath, "utf8", (readError, content) => {
+      if (readError) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Not found");
+        return;
+      }
+      sendBody(req, res, 200, headers, content.replaceAll("__ASSET_VERSION__", ASSET_VERSION));
+    });
+  });
+}
+
 function serveLogo(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const requestedPath = decodeURIComponent(url.pathname);
@@ -920,7 +973,11 @@ function serveStatic(req, res) {
   }
 
   const isHtml = path.extname(filePath).toLowerCase() === ".html";
-  sendFile(req, res, filePath, isHtml ? "no-cache" : "public, max-age=0, must-revalidate");
+  if (isHtml) {
+    sendIndexHtml(req, res, filePath);
+    return;
+  }
+  sendFile(req, res, filePath, "public, max-age=31536000, immutable");
 }
 
 async function handleApi(req, res) {
@@ -930,7 +987,7 @@ async function handleApi(req, res) {
 
   res.on("finish", () => {
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-    if (durationMs >= SLOW_API_MS) {
+    if (url.pathname !== "/api/events" && durationMs >= SLOW_API_MS) {
       logEvent("warn", "slow_api_request", {
         requestId,
         method: req.method,
@@ -962,6 +1019,31 @@ async function handleApi(req, res) {
         node: process.version
       }, {
         "Cache-Control": "no-store"
+      });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/events") {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+      eventClients.add(res);
+      writeSse(res, "state", { revision: stateRevision });
+      const pingTimer = setInterval(() => {
+        try {
+          writeSse(res, "ping", { at: Date.now() });
+        } catch {
+          clearInterval(pingTimer);
+          eventClients.delete(res);
+        }
+      }, 25_000);
+      pingTimer.unref?.();
+      req.on("close", () => {
+        clearInterval(pingTimer);
+        eventClients.delete(res);
       });
       return;
     }

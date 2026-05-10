@@ -18,14 +18,18 @@ let draftHeartbeat = null;
 let refreshTimer = null;
 let refreshDelay = 8000;
 let stateEtag = "";
+let currentStateRevision = 0;
+let stateEvents = null;
+let stateEventsConnected = false;
+let eventRefreshTimer = null;
 let autoRefreshInFlight = false;
 let auditLoadedOnce = false;
 let isCreatingActivity = false;
 let adminPanelVisible = localStorage.getItem("adminPanelVisible") === "true";
 let settingsFormDirty = false;
 
-const MIN_REFRESH_DELAY = 8000;
-const MAX_REFRESH_DELAY = 30000;
+const MIN_REFRESH_DELAY = 10000;
+const MAX_REFRESH_DELAY = 60000;
 
 const elements = {
   // activitySubtitle was renamed to brandSubtitle in branding commit
@@ -783,6 +787,7 @@ async function loadState(options = {}) {
     return false;
   }
   appState = payload;
+  currentStateRevision = Number(appState.revision || currentStateRevision || 0);
   selectedActivityId = appState.selectedActivityId;
   if (selectedActivityId) {
     localStorage.setItem("selectedActivityId", selectedActivityId);
@@ -1302,6 +1307,47 @@ function resetAutoRefreshDelay() {
   refreshDelay = MIN_REFRESH_DELAY;
 }
 
+function scheduleEventRefresh(revision) {
+  const nextRevision = Number(revision || 0);
+  if (!nextRevision || nextRevision <= currentStateRevision) {
+    return;
+  }
+  clearTimeout(eventRefreshTimer);
+  eventRefreshTimer = setTimeout(async () => {
+    if (document.hidden) {
+      return;
+    }
+    try {
+      await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
+      refreshDelay = MIN_REFRESH_DELAY;
+    } catch {
+      stateEventsConnected = false;
+    }
+  }, 250);
+}
+
+function startStateEvents() {
+  if (!window.EventSource || stateEvents) {
+    return;
+  }
+  stateEvents = new EventSource("/api/events");
+  stateEvents.addEventListener("open", () => {
+    stateEventsConnected = true;
+  });
+  stateEvents.addEventListener("state", (event) => {
+    stateEventsConnected = true;
+    try {
+      const payload = JSON.parse(event.data || "{}");
+      scheduleEventRefresh(payload.revision);
+    } catch {
+      // EventSource 会自动重连，坏消息直接忽略。
+    }
+  });
+  stateEvents.addEventListener("error", () => {
+    stateEventsConnected = false;
+  });
+}
+
 async function runAutoRefresh() {
   if (document.hidden || autoRefreshInFlight) {
     scheduleAutoRefresh(refreshDelay);
@@ -1311,7 +1357,9 @@ async function runAutoRefresh() {
   autoRefreshInFlight = true;
   try {
     const changed = await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
-    refreshDelay = changed
+    refreshDelay = stateEventsConnected
+      ? MAX_REFRESH_DELAY
+      : changed
       ? MIN_REFRESH_DELAY
       : Math.min(MAX_REFRESH_DELAY, Math.round(refreshDelay * 1.5));
   } catch {
@@ -1402,7 +1450,10 @@ for (const input of [
 }
 
 loadState()
-  .then(startAutoRefresh)
+  .then(() => {
+    startStateEvents();
+    startAutoRefresh();
+  })
   .catch((error) => {
     showToast(error.message);
   });
