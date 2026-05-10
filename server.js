@@ -18,7 +18,16 @@ if (fs.existsSync(envPath)) {
   });
 }
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
-const DEFAULT_DATA_DIR = path.join(__dirname, "data");
+
+function resolveDefaultDataDir() {
+  const railwayVolumePath = "/data";
+  if (process.platform !== "win32" && fs.existsSync(railwayVolumePath)) {
+    return railwayVolumePath;
+  }
+  return path.join(__dirname, "data");
+}
+
+const DEFAULT_DATA_DIR = resolveDefaultDataDir();
 const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(DEFAULT_DATA_DIR, "db.json");
 const DATA_DIR = path.dirname(DB_PATH);
 const LOG_DIR = process.env.LOG_DIR ? path.resolve(process.env.LOG_DIR) : path.join(DATA_DIR, "logs");
@@ -876,7 +885,8 @@ async function handleApi(req, res) {
           heapUsedMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
         },
         storage: {
-          persistentPathConfigured: Boolean(process.env.DB_PATH),
+          persistentPathConfigured: Boolean(process.env.DB_PATH) || DEFAULT_DATA_DIR === "/data",
+          dataDir: DEFAULT_DATA_DIR === "/data" ? "/data" : "app-data",
           logFileConfigured: Boolean(process.env.LOG_FILE)
         },
         node: process.version
