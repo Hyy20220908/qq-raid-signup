@@ -99,6 +99,8 @@ function newActivity(overrides = {}) {
     endTime: sanitizeText(overrides.endTime, 40),
     status: normalizeActivityStatus(overrides.status),
     counts,
+    configRevision: Number(overrides.configRevision || overrides.revision || 1),
+    rosterRevision: Number(overrides.rosterRevision || 1),
     creator: normalizeCreator(overrides.creator || { name: overrides.updatedBy || "管理员" }),
     createdAt: overrides.createdAt || now,
     updatedAt: overrides.updatedAt || now,
@@ -530,6 +532,52 @@ function normalizeActivityStatus(status) {
   return status === "ended" || status === "closed" ? "ended" : "active";
 }
 
+function makeDraftToken() {
+  return crypto.randomBytes(18).toString("base64url");
+}
+
+function normalizeRevision(value) {
+  const revision = Number(value);
+  return Number.isInteger(revision) && revision > 0 ? revision : null;
+}
+
+function revisionMatches(current, expected) {
+  const expectedRevision = normalizeRevision(expected);
+  if (!expectedRevision) {
+    return true;
+  }
+  return Number(current || 1) === expectedRevision;
+}
+
+function touchActivityConfig(activity, updatedBy = "admin") {
+  activity.configRevision = Number(activity.configRevision || 1) + 1;
+  activity.updatedAt = new Date().toISOString();
+  activity.updatedBy = updatedBy;
+}
+
+function touchActivityRoster(activity, updatedBy = "system") {
+  activity.rosterRevision = Number(activity.rosterRevision || 1) + 1;
+  activity.updatedAt = new Date().toISOString();
+  activity.updatedBy = updatedBy;
+}
+
+function sameCounts(a = {}, b = {}) {
+  return ["tank", "healer", "boss", "dps"].every((key) => Number(a[key] || 0) === Number(b[key] || 0));
+}
+
+function signupRevision(signup) {
+  const revision = Number(signup?.revision);
+  return Number.isInteger(revision) && revision > 0 ? revision : 1;
+}
+
+function signupVersionMatches(signup, expectedRevision, expectedUpdatedAt) {
+  const revision = normalizeRevision(expectedRevision);
+  if (revision) {
+    return signupRevision(signup) === revision;
+  }
+  return !expectedUpdatedAt || signup?.updatedAt === expectedUpdatedAt;
+}
+
 function toNonNegativeInt(value) {
   const number = Number(value);
   if (!Number.isInteger(number) || number < 0 || number > 25) {
@@ -617,6 +665,10 @@ function cleanupExpiredDrafts(db, activityId) {
       const expiresAt = Date.parse(draft.expiresAt || "");
       if (!expiresAt || expiresAt <= now || maps.signups[slotId]) {
         delete maps.drafts[slotId];
+        const activity = db.activities.find((item) => item.id === id);
+        if (activity) {
+          touchActivityRoster(activity, "system");
+        }
         changed = true;
       }
     }
@@ -624,13 +676,16 @@ function cleanupExpiredDrafts(db, activityId) {
   return changed;
 }
 
-function releaseDraft(db, activityId, slotId, qq, admin) {
+function releaseDraft(db, activityId, slotId, qq, admin, draftToken = "") {
   const maps = getActivityMaps(db, activityId);
   const draft = maps.drafts[slotId];
   if (!draft) {
     return false;
   }
   if (!admin && draft.qq !== qq) {
+    return false;
+  }
+  if (!admin && draft.token && draft.token !== draftToken) {
     return false;
   }
   delete maps.drafts[slotId];
@@ -739,12 +794,27 @@ function activitySummary(db, activity) {
   const signed = Object.keys(maps.signups).length;
   return {
     ...activity,
+    configRevision: Number(activity.configRevision || 1),
+    rosterRevision: Number(activity.rosterRevision || 1),
     difficultyLabel: activity.difficulty === "hero" ? "英雄" : "普通",
     statusLabel: activity.status === "ended" ? "结束" : "进行中",
     creatorLabel: creatorLabel(activity.creator),
     signed,
     total
   };
+}
+
+function publicDrafts(req, drafts) {
+  const qq = sanitizeQq(parseCookies(req).qqUser);
+  return Object.fromEntries(
+    Object.entries(drafts || {}).map(([slotId, draft]) => {
+      const visibleDraft = { ...draft };
+      if (!qq || visibleDraft.qq !== qq) {
+        delete visibleDraft.token;
+      }
+      return [slotId, visibleDraft];
+    })
+  );
 }
 
 function publicState(db, req, activityId) {
@@ -757,7 +827,7 @@ function publicState(db, req, activityId) {
     activity: activitySummary(db, activity),
     slots: buildSlots(activity),
     signups: maps.signups,
-    drafts: maps.drafts,
+    drafts: publicDrafts(req, maps.drafts),
     options: {
       roles: roleLabels,
       specs: roleOptions
@@ -1019,6 +1089,7 @@ async function handleApi(req, res) {
         return;
       }
       const activityId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/activities/", "")), 80);
+      const body = await readBody(req).catch(() => ({}));
       const db = readDb();
       const index = db.activities.findIndex((a) => a.id === activityId);
       if (index === -1) {
@@ -1026,6 +1097,14 @@ async function handleApi(req, res) {
         return;
       }
       const activity = db.activities[index];
+      if (!revisionMatches(activity.configRevision, body.expectedConfigRevision)) {
+        sendError(res, 409, "活动设置已被其他管理员修改，请刷新后重试");
+        return;
+      }
+      if (!revisionMatches(activity.rosterRevision, body.expectedRosterRevision)) {
+        sendError(res, 409, "团队名册已发生变化，请刷新后重试");
+        return;
+      }
       if (db.activities.length === 1) {
         sendError(res, 400, "不能删除最后一个活动，至少保留一个活动");
         return;
@@ -1111,12 +1190,20 @@ async function handleApi(req, res) {
         return;
       }
       cleanupExpiredDrafts(db, activity.id);
+      if (!revisionMatches(activity.configRevision, body.expectedConfigRevision)) {
+        sendError(res, 409, "活动设置已被其他管理员修改，请刷新后重试");
+        return;
+      }
+      if (!revisionMatches(activity.rosterRevision, body.expectedRosterRevision)) {
+        sendError(res, 409, "团队名册已发生变化，请刷新后重试");
+        return;
+      }
       const before = JSON.parse(JSON.stringify(activity));
       const nextActivity = normalizeActivity(body, activity);
       nextActivity.id = activity.id;
       nextActivity.createdAt = activity.createdAt;
-      nextActivity.updatedAt = new Date().toISOString();
-      nextActivity.updatedBy = "admin";
+      touchActivityConfig(nextActivity, "admin");
+      const countsChanged = !sameCounts(before.counts, nextActivity.counts);
 
       const maps = getActivityMaps(db, activity.id);
       const nextSlotIds = new Set(buildSlots(nextActivity).map((slot) => slot.id));
@@ -1131,6 +1218,9 @@ async function handleApi(req, res) {
         if (!nextSlotIds.has(slotId)) {
           delete maps.drafts[slotId];
         }
+      }
+      if (countsChanged || removedSignups.length > 0) {
+        touchActivityRoster(nextActivity, "admin");
       }
 
       const index = db.activities.findIndex((item) => item.id === activity.id);
@@ -1173,10 +1263,15 @@ async function handleApi(req, res) {
         sendError(res, 404, "活动不存在");
         return;
       }
+      if (!revisionMatches(activity.rosterRevision, body.expectedRosterRevision)) {
+        sendError(res, 409, "团队名册已发生变化，请刷新后重试");
+        return;
+      }
       const maps = getActivityMaps(db, activity.id);
       const before = maps.signups;
       db.signups[activity.id] = {};
       db.drafts[activity.id] = {};
+      touchActivityRoster(activity, "admin");
       appendAudit(db, {
         actor: "admin",
         action: "activity:clear",
@@ -1225,12 +1320,13 @@ async function handleApi(req, res) {
       }
 
       const existing = maps.drafts[slotId];
-      if (existing && existing.qq !== qq && !isAdmin(req)) {
+      if (existing && existing.qq !== qq) {
         sendError(res, 409, `${actorLabel(existing.qq, existing.displayName)}正在填写中`);
         return;
       }
 
       const now = new Date();
+      const wasNewDraft = !existing;
       maps.drafts[slotId] = {
         activityId: activity.id,
         slotId,
@@ -1239,10 +1335,17 @@ async function handleApi(req, res) {
         displayName,
         startedAt: existing && existing.qq === qq ? existing.startedAt : now.toISOString(),
         updatedAt: now.toISOString(),
-        expiresAt: new Date(now.getTime() + DRAFT_TTL_MS).toISOString()
+        expiresAt: new Date(now.getTime() + DRAFT_TTL_MS).toISOString(),
+        token: existing?.token || makeDraftToken()
       };
+      if (wasNewDraft) {
+        touchActivityRoster(activity, qq);
+      }
       writeDb(db);
-      sendJson(res, 200, publicState(db, req, activity.id));
+      sendJson(res, 200, {
+        ...publicState(db, req, activity.id),
+        draftToken: maps.drafts[slotId].token
+      });
       return;
     }
 
@@ -1257,8 +1360,10 @@ async function handleApi(req, res) {
         return;
       }
       cleanupExpiredDrafts(db, activity.id);
-      releaseDraft(db, activity.id, slotId, qq, isAdmin(req));
-      writeDb(db);
+      if (releaseDraft(db, activity.id, slotId, qq, isAdmin(req), String(body.draftToken || ""))) {
+        touchActivityRoster(activity, qq || "admin");
+        writeDb(db);
+      }
       sendJson(res, 200, publicState(db, req, activity.id));
       return;
     }
@@ -1293,14 +1398,30 @@ async function handleApi(req, res) {
       }
 
       const before = maps.signups[slotId] || null;
+      const expectedSignupUpdatedAt = sanitizeText(body.expectedSignupUpdatedAt, 40);
+      const expectedSignupRevision = body.expectedSignupRevision;
+      const draftToken = String(body.draftToken || "");
+      if ((normalizeRevision(expectedSignupRevision) || expectedSignupUpdatedAt) && (!before || !signupVersionMatches(before, expectedSignupRevision, expectedSignupUpdatedAt))) {
+        sendError(res, 409, "报名信息已被其他操作更新，请刷新后重试");
+        return;
+      }
       if (before && !admin && before.qq !== qq) {
         sendError(res, 403, "只能修改自己的报名信息");
         return;
       }
 
       const draft = maps.drafts[slotId];
-      if (draft && draft.qq !== qq && !admin) {
+      if (draft && draft.qq !== qq) {
         sendError(res, 409, `${actorLabel(draft.qq, draft.displayName)}正在填写中`);
+        return;
+      }
+
+      if (!before && !admin && (!draft || draft.qq !== qq || (draft.token && draft.token !== draftToken))) {
+        sendError(res, 409, "报名位置锁定已变化，请刷新后重新选择");
+        return;
+      }
+      if (draft && draft.qq === qq && draft.token && draft.token !== draftToken && !admin) {
+        sendError(res, 409, "报名位置锁定已变化，请刷新后重新选择");
         return;
       }
 
@@ -1311,12 +1432,14 @@ async function handleApi(req, res) {
         slotId,
         role: slot.role,
         ...normalized,
+        revision: before ? signupRevision(before) + 1 : 1,
         createdAt: before ? before.createdAt : now,
         updatedAt: now
       };
 
       maps.signups[slotId] = next;
       delete maps.drafts[slotId];
+      touchActivityRoster(activity, admin ? "admin" : qq);
       appendAudit(db, {
         actor: admin ? "admin" : qq,
         action: before ? "signup:update" : "signup:create",
@@ -1336,7 +1459,7 @@ async function handleApi(req, res) {
       const body = await readBody(req).catch(() => ({}));
       const qq = sanitizeQq(body.qq || parseCookies(req).qqUser);
       const admin = isAdmin(req);
-      if (!qq) {
+      if (!qq && !admin) {
         sendError(res, 401, "请先输入 QQ 号登录");
         return;
       }
@@ -1359,11 +1482,18 @@ async function handleApi(req, res) {
         sendError(res, 404, "这个位置还没有报名");
         return;
       }
+      const expectedSignupUpdatedAt = sanitizeText(body.expectedSignupUpdatedAt, 40);
+      const expectedSignupRevision = body.expectedSignupRevision;
+      if ((normalizeRevision(expectedSignupRevision) || expectedSignupUpdatedAt) && !signupVersionMatches(before, expectedSignupRevision, expectedSignupUpdatedAt)) {
+        sendError(res, 409, "报名信息已被其他操作更新，请刷新后重试");
+        return;
+      }
       if (!admin && before.qq !== qq) {
         sendError(res, 403, "只能撤销自己的报名");
         return;
       }
       delete maps.signups[slotId];
+      touchActivityRoster(activity, admin ? "admin" : qq);
       appendAudit(db, {
         actor: admin ? "admin" : qq,
         action: "signup:delete",

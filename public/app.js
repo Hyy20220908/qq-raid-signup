@@ -10,6 +10,9 @@ let currentUser = loadUser();
 let selectedActivityId = localStorage.getItem("selectedActivityId") || "";
 let selectedSlot = null;
 let selectedSlotActivityId = "";
+let selectedDraftToken = "";
+let selectedSignupUpdatedAt = "";
+let selectedSignupRevision = "";
 let draftHeartbeat = null;
 let refreshTimer = null;
 let refreshDelay = 8000;
@@ -169,9 +172,32 @@ async function api(path, options = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || "请求失败");
+    const error = new Error(payload.error || "请求失败");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
   return payload;
+}
+
+async function handleConflictError(error, options = {}) {
+  if (error.status === 409) {
+    await loadState({
+      activityId: selectedActivityId,
+      preserveAdminForm: options.preserveAdminForm ?? true,
+      skipAudit: true
+    }).catch(() => {});
+    if (options.closeDialog && elements.signupDialog.open) {
+      stopDraftHeartbeat();
+      selectedSlot = null;
+      selectedSlotActivityId = "";
+      selectedDraftToken = "";
+      selectedSignupUpdatedAt = "";
+      selectedSignupRevision = "";
+      elements.signupDialog.close();
+    }
+  }
+  showToast(error.message);
 }
 
 async function fetchState(path) {
@@ -482,7 +508,7 @@ async function uploadLogo() {
     elements.settingsLogoFile.value = "";
     showToast("Logo 已上传");
   } catch (error) {
-    showToast(error.message);
+    await handleConflictError(error);
   }
 }
 
@@ -499,7 +525,7 @@ async function removeLogo() {
     renderAll({ preserveAdminForm: true, skipAudit: true });
     showToast("Logo 已移除");
   } catch (error) {
-    showToast(error.message);
+    await handleConflictError(error);
   }
 }
 
@@ -532,7 +558,7 @@ async function saveSettings() {
     renderAll({ preserveAdminForm: true, skipAudit: true });
     showToast("品牌设置已保存");
   } catch (error) {
-    showToast(error.message);
+    await handleConflictError(error);
   }
 }
 
@@ -568,7 +594,7 @@ async function changeAdminPassword(event) {
     await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
     showToast("管理员密码已修改", "success");
   } catch (error) {
-    showToast(error.message);
+    await handleConflictError(error);
   }
 }
 
@@ -784,6 +810,11 @@ function slotById(slotId) {
   return appState.slots.find((slot) => slot.id === slotId);
 }
 
+function ownDraftToken(slotId) {
+  const draft = appState?.drafts?.[slotId];
+  return currentUser && draft?.qq === currentUser.qq ? (draft.token || "") : "";
+}
+
 async function openSignupDialog(slotId) {
   const slot = slotById(slotId);
   const signup = appState.signups[slotId];
@@ -812,9 +843,10 @@ async function openSignupDialog(slotId) {
     return;
   }
 
+  let draftTokenFromResponse = "";
   try {
     if (!signup) {
-      appState = await api("/api/drafts", {
+      const payload = await api("/api/drafts", {
         method: "POST",
         body: JSON.stringify({
           activityId: selectedActivityId,
@@ -823,6 +855,8 @@ async function openSignupDialog(slotId) {
           slotId
         })
       });
+      appState = payload;
+      draftTokenFromResponse = payload.draftToken || "";
       renderAll({ preserveAdminForm: true, skipAudit: true });
     }
   } catch (error) {
@@ -833,6 +867,9 @@ async function openSignupDialog(slotId) {
 
   selectedSlot = slot;
   selectedSlotActivityId = selectedActivityId;
+  selectedDraftToken = draftTokenFromResponse || ownDraftToken(slot.id);
+  selectedSignupUpdatedAt = signup?.updatedAt || "";
+  selectedSignupRevision = signup ? Number(signup.revision || 1) : "";
   elements.slotIdInput.value = slot.id;
   elements.dialogRole.textContent = `${appState.activity.title} · ${slot.label}`;
   elements.dialogTitle.textContent = signup ? (appState.isAdmin ? "管理员调整报名" : "修改报名") : "填写报名";
@@ -887,7 +924,7 @@ function startDraftHeartbeat(slotId) {
       return;
     }
     try {
-      appState = await api("/api/drafts", {
+      const payload = await api("/api/drafts", {
         method: "POST",
         body: JSON.stringify({
           activityId: selectedSlotActivityId,
@@ -896,10 +933,12 @@ function startDraftHeartbeat(slotId) {
           slotId
         })
       });
+      appState = payload;
+      selectedDraftToken = payload.draftToken || ownDraftToken(slotId);
       renderAll({ preserveAdminForm: true, skipAudit: true });
     } catch (error) {
       stopDraftHeartbeat();
-      showToast(error.message);
+      await handleConflictError(error, { closeDialog: true });
     }
   }, 30000);
 }
@@ -916,6 +955,9 @@ async function releaseSelectedDraft() {
   if (!selectedSlot || !currentUser) {
     selectedSlot = null;
     selectedSlotActivityId = "";
+    selectedDraftToken = "";
+    selectedSignupUpdatedAt = "";
+    selectedSignupRevision = "";
     return;
   }
   const slotId = selectedSlot.id;
@@ -924,6 +966,10 @@ async function releaseSelectedDraft() {
   const signup = appState?.signups?.[slotId];
   selectedSlot = null;
   selectedSlotActivityId = "";
+  const draftToken = selectedDraftToken;
+  selectedDraftToken = "";
+  selectedSignupUpdatedAt = "";
+  selectedSignupRevision = "";
   if (!draft || signup || draft.qq !== currentUser.qq) {
     return;
   }
@@ -931,7 +977,7 @@ async function releaseSelectedDraft() {
   try {
     appState = await api(`/api/drafts/${encodeURIComponent(slotId)}`, {
       method: "DELETE",
-      body: JSON.stringify({ activityId, qq: currentUser.qq })
+      body: JSON.stringify({ activityId, qq: currentUser.qq, draftToken })
     });
     renderAll({ preserveAdminForm: true, skipAudit: true });
   } catch {
@@ -954,7 +1000,10 @@ async function submitSignup(event) {
     buffStacks: elements.buffStacksInput.value || 0,
     gearScore: elements.gearScoreInput.value || 0,
     note: elements.noteInput.value,
-    isBoss: elements.isBossInput.checked
+    isBoss: elements.isBossInput.checked,
+    draftToken: selectedDraftToken || ownDraftToken(selectedSlot.id),
+    expectedSignupUpdatedAt: selectedSignupUpdatedAt,
+    expectedSignupRevision: selectedSignupRevision
   };
 
   try {
@@ -965,11 +1014,14 @@ async function submitSignup(event) {
     stopDraftHeartbeat();
     selectedSlot = null;
     selectedSlotActivityId = "";
+    selectedDraftToken = "";
+    selectedSignupUpdatedAt = "";
+    selectedSignupRevision = "";
     elements.signupDialog.close();
     renderAll();
     showToast("报名已保存");
   } catch (error) {
-    showToast(error.message);
+    await handleConflictError(error, { closeDialog: true });
   }
 }
 
@@ -993,16 +1045,23 @@ async function deleteSignup() {
   try {
     appState = await api(`/api/signups/${encodeURIComponent(selectedSlot.id)}`, {
       method: "DELETE",
-      body: JSON.stringify({ activityId: selectedSlotActivityId || selectedActivityId })
+      body: JSON.stringify({
+        activityId: selectedSlotActivityId || selectedActivityId,
+        expectedSignupUpdatedAt: selectedSignupUpdatedAt || signup.updatedAt || "",
+        expectedSignupRevision: selectedSignupRevision || signup.revision || ""
+      })
     });
     stopDraftHeartbeat();
     selectedSlot = null;
     selectedSlotActivityId = "";
+    selectedDraftToken = "";
+    selectedSignupUpdatedAt = "";
+    selectedSignupRevision = "";
     elements.signupDialog.close();
     renderAll();
     showToast("报名已撤销");
   } catch (error) {
-    showToast(error.message);
+    await handleConflictError(error, { closeDialog: true });
   }
 }
 
@@ -1059,7 +1118,9 @@ function activityFormPayload() {
       healer: Number(elements.healerCountInput.value),
       boss: 0,
       dps: Number(elements.dpsCountInput.value)
-    }
+    },
+    expectedConfigRevision: appState?.activity?.configRevision || 1,
+    expectedRosterRevision: appState?.activity?.rosterRevision || 1
   };
 }
 
@@ -1079,7 +1140,7 @@ async function submitActivity(event) {
     renderAll();
     showToast(isCreate ? "活动已创建" : "活动已保存");
   } catch (error) {
-    showToast(error.message);
+    await handleConflictError(error, { preserveAdminForm: false });
   }
 }
 
@@ -1125,7 +1186,10 @@ async function deleteActivity() {
   try {
     await api(`/api/activities/${encodeURIComponent(appState.activity.id)}`, {
       method: "DELETE",
-      body: JSON.stringify({})
+      body: JSON.stringify({
+        expectedConfigRevision: appState.activity.configRevision || 1,
+        expectedRosterRevision: appState.activity.rosterRevision || 1
+      })
     });
     auditLoadedOnce = false;
     selectedActivityId = "";
@@ -1133,7 +1197,7 @@ async function deleteActivity() {
     await loadState();
     showToast("活动已删除");
   } catch (error) {
-    showToast(error.message);
+    await handleConflictError(error, { preserveAdminForm: false });
   }
 }
 
@@ -1159,6 +1223,7 @@ async function clearActivitySignups() {
       method: "POST",
       body: JSON.stringify({
         activityId: appState.activity.id,
+        expectedRosterRevision: appState.activity.rosterRevision || 1,
         reason: "管理员清空报名"
       })
     });
@@ -1166,7 +1231,7 @@ async function clearActivitySignups() {
     renderAll();
     showToast("报名已清空", "success");
   } catch (error) {
-    showToast(error.message);
+    await handleConflictError(error, { preserveAdminForm: false });
   }
 }
 
