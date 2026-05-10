@@ -348,6 +348,14 @@ select:focus {
   background: #ffffff;
 }
 
+input:disabled,
+select:disabled {
+  color: var(--ink);
+  background: var(--paper-deep);
+  opacity: 1;
+  cursor: default;
+}
+
 button {
   transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
@@ -699,12 +707,12 @@ button:active {
 }
 
 .board-5x5 .slot-card {
-  height: 138px;
-  min-height: 138px;
+  height: 126px;
+  min-height: 126px;
 }
 
-.board-5x5 .slot-id {
-  font-size: 15px;
+.board-5x5 .slot-card.occupied .slot-id {
+  font-size: 19px;
   line-height: 1.28;
 }
 
@@ -733,25 +741,42 @@ button:active {
 .slot-card {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  gap: 7px;
-  min-height: 148px;
+  gap: 6px;
+  min-height: 132px;
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  padding: 9px;
+  border-radius: 8px;
+  padding: 9px 10px;
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.92);
+  background: #ffffff;
   text-align: left;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
 
 .slot-card:hover {
   border-color: rgba(0, 113, 227, 0.26);
   box-shadow: var(--shadow-soft);
+  transform: translateY(-1px);
+}
+
+.slot-card.occupied.role-dps {
+  border-color: #aedfc0;
+  background: linear-gradient(180deg, #eef8f2 0%, #dff1e6 100%);
+}
+
+.slot-card.occupied.role-healer {
+  border-color: #e8bccb;
+  background: linear-gradient(180deg, #fff2f6 0%, #f8dfea 100%);
+}
+
+.slot-card.occupied.role-tank {
+  border-color: #adcbe7;
+  background: linear-gradient(180deg, #eef7ff 0%, #dcecfb 100%);
 }
 
 .slot-card.owned {
-  border-color: rgba(36, 138, 61, 0.42);
-  box-shadow: 0 0 0 3px rgba(36, 138, 61, 0.10);
+  border-color: rgba(0, 113, 227, 0.42);
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.12);
 }
 
 .slot-card.drafting {
@@ -765,14 +790,22 @@ button:active {
 }
 
 .slot-card.occupied:not(.owned) {
-  cursor: default;
+  cursor: pointer;
 }
 
-.slot-card.is-boss {
-  border-color: rgba(178, 118, 0, 0.48);
+.slot-card.occupied.is-boss {
+  border-color: #c89a2c;
   background:
-    linear-gradient(180deg, rgba(178, 118, 0, 0.10), rgba(255, 255, 255, 0.94) 58%),
-    #ffffff;
+    linear-gradient(145deg, rgba(255, 255, 255, 0.46) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, #fff0b8 0%, #e6c05a 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 0 0 1px rgba(200, 154, 44, 0.10),
+    0 8px 18px rgba(132, 89, 0, 0.10);
+}
+
+.slot-card.occupied .slot-top {
+  justify-content: flex-end;
 }
 
 .slot-top {
@@ -836,14 +869,18 @@ button:active {
 }
 
 .slot-empty {
+  align-self: center;
   color: var(--ink-muted);
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 700;
+  letter-spacing: 0;
 }
 
 .slot-id {
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.15;
   overflow-wrap: anywhere;
   display: -webkit-box;
   overflow: hidden;
@@ -859,7 +896,7 @@ button:active {
   font-size: 11px;
   line-height: 1.35;
   overflow-wrap: anywhere;
-  max-height: 44px;
+  max-height: 48px;
   overflow: hidden;
 }
 
@@ -874,10 +911,10 @@ button:active {
   display: inline-flex;
   align-items: center;
   min-height: 20px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 999px;
   padding: 1px 6px;
-  background: var(--paper-light);
+  background: rgba(255, 255, 255, 0.74);
   color: var(--ink-soft);
   font-size: 11px;
   font-weight: 700;
@@ -894,9 +931,27 @@ button:active {
 }
 
 .slot-action {
-  color: var(--cinnabar);
-  font-size: 13px;
+  justify-self: start;
+  align-self: end;
+  min-height: 22px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
   font-weight: 700;
+  line-height: 1.25;
+}
+
+.slot-card.owned .slot-action {
+  border-color: rgba(0, 113, 227, 0.22);
+  color: var(--cinnabar);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.slot-card:not(.occupied) .slot-action {
+  color: var(--cinnabar);
 }
 
 .boss-toggle-row {
@@ -1279,8 +1334,8 @@ button:active {
   }
 
   .board-5x5 .slot-card {
-    height: 132px;
-    min-height: 132px;
+    height: 118px;
+    min-height: 118px;
   }
 
   .board-5x5 .slot-tag {

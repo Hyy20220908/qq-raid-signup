@@ -13,6 +13,7 @@ let selectedSlotActivityId = "";
 let selectedDraftToken = "";
 let selectedSignupUpdatedAt = "";
 let selectedSignupRevision = "";
+let selectedSignupReadOnly = false;
 let draftHeartbeat = null;
 let refreshTimer = null;
 let refreshDelay = 8000;
@@ -91,6 +92,7 @@ const elements = {
   bossToggleField: document.querySelector("#bossToggleField"),
   isBossInput: document.querySelector("#isBossInput"),
   deleteSignupBtn: document.querySelector("#deleteSignupBtn"),
+  signupSubmitBtn: document.querySelector("#signupSubmitBtn"),
   adminDialog: document.querySelector("#adminDialog"),
   adminLoginForm: document.querySelector("#adminLoginForm"),
   adminPasswordInput: document.querySelector("#adminPasswordInput"),
@@ -194,6 +196,8 @@ async function handleConflictError(error, options = {}) {
       selectedDraftToken = "";
       selectedSignupUpdatedAt = "";
       selectedSignupRevision = "";
+      selectedSignupReadOnly = false;
+      setSignupDialogReadOnly(false);
       elements.signupDialog.close();
     }
   }
@@ -647,16 +651,19 @@ function renderSlot(slot) {
   const drafting = Boolean(!signup && draft);
   const ownDraft = isOwnDraft(draft);
   const isBoss = Boolean(signup?.isBoss);
-  const status = isBoss ? "老板" : occupied ? (owned ? "我的报名" : "已定") : drafting ? "填写中" : "空位";
+  const status = isBoss ? "老板" : occupied ? (owned ? "我的报名" : "已填写") : drafting ? "填写中" : "";
   const action = getSlotAction(signup, draft, owned, ownDraft);
   const body = signup
     ? renderSignupBody(slot.role, signup)
     : drafting
       ? renderDraftBody(draft, ownDraft)
-      : `<span class="slot-empty">虚席以待</span>`;
+      : `<span class="slot-empty">空位</span>`;
+  const slotTagHtml = occupied ? "" : `<span class="slot-tag ${slot.role}">${slot.label}</span>`;
+  const statusHtml = status ? `<span class="slot-status">${status}</span>` : "";
 
   const classes = [
     "slot-card",
+    `role-${slot.role}`,
     occupied ? "occupied" : "",
     owned ? "owned" : "",
     drafting ? "drafting" : "",
@@ -669,8 +676,8 @@ function renderSlot(slot) {
   return `
     <button class="${classes}" type="button" data-slot-id="${slot.id}">
       <span class="slot-top">
-        <span class="slot-tag ${slot.role}">${slot.label}</span>
-        <span class="slot-status">${status}</span>
+        ${slotTagHtml}
+        ${statusHtml}
       </span>
       <span class="slot-body">${body}</span>
       <span class="slot-action">${action}</span>
@@ -679,14 +686,14 @@ function renderSlot(slot) {
 }
 
 function getSlotAction(signup, draft, owned, ownDraft) {
-  if (!currentUser) {
-    return "登录报名";
-  }
   if (signup) {
     if (appState.isAdmin) {
       return "调整";
     }
     return owned ? "修改" : "查看";
+  }
+  if (!currentUser) {
+    return "登录报名";
   }
   if (draft && !ownDraft) {
     return "填写中";
@@ -712,8 +719,8 @@ function renderSignupBody(role, signup) {
   if (!signup.isBoss && role === "dps" && signup.gearScore !== "") {
     meta.push(`<span class="signup-chip">装分 ${escapeHtml(signup.gearScore)}</span>`);
   }
-  if (signup.note) {
-    meta.push(`<span class="signup-chip note">${escapeHtml(signup.note)}</span>`);
+  if (!meta.length) {
+    meta.push(`<span class="signup-chip">信息待补</span>`);
   }
 
   return `
@@ -815,21 +822,33 @@ function ownDraftToken(slotId) {
   return currentUser && draft?.qq === currentUser.qq ? (draft.token || "") : "";
 }
 
+function setSignupDialogReadOnly(readOnly) {
+  for (const control of [
+    elements.isBossInput,
+    elements.specInput,
+    elements.signupIdInput,
+    elements.buffStacksInput,
+    elements.gearScoreInput,
+    elements.noteInput
+  ]) {
+    control.disabled = readOnly;
+  }
+  elements.signupSubmitBtn.hidden = readOnly;
+}
+
 async function openSignupDialog(slotId) {
   const slot = slotById(slotId);
   const signup = appState.signups[slotId];
   const draft = appState.drafts?.[slotId];
   const owned = currentUser && signup && signup.qq === currentUser.qq;
   const ownDraft = isOwnDraft(draft);
+  const ended = appState.activity.status === "ended";
+  const canEditSignup = !signup || (Boolean(currentUser) && (appState.isAdmin || (owned && !ended)));
+  const readOnlySignup = Boolean(signup && !canEditSignup);
 
-  if (!currentUser) {
+  if (!currentUser && !signup) {
     showToast("请先输入 QQ 号登录");
     elements.qqInput.focus();
-    return;
-  }
-
-  if (signup && !owned && !appState.isAdmin) {
-    showToast("已报名位置只可查看，不能修改。");
     return;
   }
 
@@ -838,7 +857,7 @@ async function openSignupDialog(slotId) {
     return;
   }
 
-  if (appState.activity.status === "ended" && !appState.isAdmin) {
+  if (ended && !appState.isAdmin && !signup) {
     showToast("当前活动已结束");
     return;
   }
@@ -870,10 +889,15 @@ async function openSignupDialog(slotId) {
   selectedDraftToken = draftTokenFromResponse || ownDraftToken(slot.id);
   selectedSignupUpdatedAt = signup?.updatedAt || "";
   selectedSignupRevision = signup ? Number(signup.revision || 1) : "";
+  selectedSignupReadOnly = readOnlySignup;
   elements.slotIdInput.value = slot.id;
   elements.dialogRole.textContent = `${appState.activity.title} · ${slot.label}`;
-  elements.dialogTitle.textContent = signup ? (appState.isAdmin ? "管理员调整报名" : "修改报名") : "填写报名";
-  elements.dialogQqInput.value = currentUser.displayName
+  elements.dialogTitle.textContent = signup
+    ? (readOnlySignup ? "查看报名" : appState.isAdmin ? "管理员调整报名" : "修改报名")
+    : "填写报名";
+  elements.dialogQqInput.value = signup
+    ? `QQ ${signup.qq}`
+    : currentUser.displayName
     ? `${currentUser.displayName} · QQ ${currentUser.qq}`
     : currentUser.qq;
   elements.signupIdInput.value = signup?.signupId || "";
@@ -881,8 +905,9 @@ async function openSignupDialog(slotId) {
   elements.gearScoreInput.value = signup?.gearScore || "";
   elements.noteInput.value = signup?.note || "";
   elements.isBossInput.checked = Boolean(signup?.isBoss);
-  elements.deleteSignupBtn.hidden = !signup || !(appState.isAdmin || owned);
+  elements.deleteSignupBtn.hidden = !signup || readOnlySignup || !(appState.isAdmin || owned);
   elements.deleteSignupBtn.textContent = owned && !appState.isAdmin ? "撤销我的报名" : "撤销报名";
+  setSignupDialogReadOnly(readOnlySignup);
 
   function refreshDialogFields() {
     const isBoss = elements.isBossInput.checked;
@@ -958,6 +983,8 @@ async function releaseSelectedDraft() {
     selectedDraftToken = "";
     selectedSignupUpdatedAt = "";
     selectedSignupRevision = "";
+    selectedSignupReadOnly = false;
+    setSignupDialogReadOnly(false);
     return;
   }
   const slotId = selectedSlot.id;
@@ -970,6 +997,8 @@ async function releaseSelectedDraft() {
   selectedDraftToken = "";
   selectedSignupUpdatedAt = "";
   selectedSignupRevision = "";
+  selectedSignupReadOnly = false;
+  setSignupDialogReadOnly(false);
   if (!draft || signup || draft.qq !== currentUser.qq) {
     return;
   }
@@ -987,6 +1016,9 @@ async function releaseSelectedDraft() {
 
 async function submitSignup(event) {
   event.preventDefault();
+  if (selectedSignupReadOnly) {
+    return;
+  }
   if (!selectedSlot || !currentUser) {
     return;
   }
@@ -1017,6 +1049,7 @@ async function submitSignup(event) {
     selectedDraftToken = "";
     selectedSignupUpdatedAt = "";
     selectedSignupRevision = "";
+    selectedSignupReadOnly = false;
     elements.signupDialog.close();
     renderAll();
     showToast("报名已保存");
@@ -1057,6 +1090,7 @@ async function deleteSignup() {
     selectedDraftToken = "";
     selectedSignupUpdatedAt = "";
     selectedSignupRevision = "";
+    selectedSignupReadOnly = false;
     elements.signupDialog.close();
     renderAll();
     showToast("报名已撤销");
