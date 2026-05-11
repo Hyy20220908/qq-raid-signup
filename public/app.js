@@ -27,6 +27,7 @@ let auditLoadedOnce = false;
 let isCreatingActivity = false;
 let adminPanelVisible = localStorage.getItem("adminPanelVisible") === "true";
 let settingsFormDirty = false;
+let activeView = localStorage.getItem("activeView") === "fengshen" ? "fengshen" : "signup";
 
 const MIN_REFRESH_DELAY = 10000;
 const MAX_REFRESH_DELAY = 60000;
@@ -40,6 +41,12 @@ const elements = {
   loginForm: document.querySelector("#loginForm"),
   qqInput: document.querySelector("#qqInput"),
   displayNameInput: document.querySelector("#displayNameInput"),
+  homeActions: document.querySelector("#homeActions"),
+  showFengshenBtn: document.querySelector("#showFengshenBtn"),
+  fengshenPanel: document.querySelector("#fengshenPanel"),
+  fengshenSeasonLabel: document.querySelector("#fengshenSeasonLabel"),
+  backFromFengshenBtn: document.querySelector("#backFromFengshenBtn"),
+  refreshFengshenBtn: document.querySelector("#refreshFengshenBtn"),
   activityListSection: document.querySelector("#activityListSection"),
   activityCards: document.querySelector("#activityCards"),
   emptyActivities: document.querySelector("#emptyActivities"),
@@ -77,6 +84,7 @@ const elements = {
   backToListBtn: document.querySelector("#backToListBtn"),
   refreshBtn: document.querySelector("#refreshBtn"),
   board: document.querySelector("#board"),
+  lootRecords: document.querySelector("#lootRecords"),
   signupDialog: document.querySelector("#signupDialog"),
   signupForm: document.querySelector("#signupForm"),
   dialogRole: document.querySelector("#dialogRole"),
@@ -309,6 +317,28 @@ function isOwnDraft(draft) {
   return Boolean(currentUser && draft && draft.qq === currentUser.qq);
 }
 
+function isFengshenView() {
+  return activeView === "fengshen";
+}
+
+function setView(nextView) {
+  activeView = nextView === "fengshen" ? "fengshen" : "signup";
+  localStorage.setItem("activeView", activeView);
+  renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
+}
+
+function renderViewChrome() {
+  const fengshen = isFengshenView();
+  elements.homeActions.hidden = fengshen;
+  elements.fengshenPanel.hidden = !fengshen;
+  elements.activityListSection.hidden = fengshen;
+  if (fengshen) {
+    elements.loginPanel.hidden = true;
+    elements.adminPanel.hidden = true;
+    elements.detailPanel.hidden = true;
+  }
+}
+
 function renderUser() {
   if (currentUser) {
     elements.userBadge.textContent = currentUser.displayName
@@ -512,7 +542,7 @@ async function uploadLogo() {
       body: JSON.stringify({ image: base64 })
     });
     appState.settings.brandLogoPath = payload.logoPath;
-    renderAll({ preserveAdminForm: true, skipAudit: true });
+    renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
     elements.settingsLogoFile.value = "";
     showToast("Logo 已上传");
   } catch (error) {
@@ -735,6 +765,107 @@ function renderSignupBody(role, signup) {
   `;
 }
 
+function renderLootRecords(options = {}) {
+  const records = appState?.seasonLootRecords || appState?.lootRecords || [];
+  const isAdmin = Boolean(appState?.isAdmin);
+  if (!options.forceLootRender && elements.lootRecords.contains(document.activeElement)) {
+    return;
+  }
+  const seasonName = appState?.season?.name || "当前赛季";
+  elements.fengshenSeasonLabel.textContent = `${seasonName} · 已结束活动自动入榜`;
+  if (!records.length) {
+    elements.lootRecords.innerHTML = `<div class="empty-state compact">暂无封神榜记录。活动结束后会自动进入这里。</div>`;
+    return;
+  }
+
+  elements.lootRecords.innerHTML = `
+    <div class="loot-table ${isAdmin ? "admin" : "viewer"}" role="table">
+      <div class="loot-row loot-head" role="row">
+        <span>活动时间</span>
+        <span>副本内容</span>
+        <span>黑本人</span>
+        <span>特殊掉落</span>
+        <span>工资</span>
+        ${isAdmin ? "<span>操作</span>" : ""}
+      </div>
+      ${records.map((record) => renderLootRecordRow(record, isAdmin)).join("")}
+    </div>
+  `;
+
+  if (isAdmin) {
+    for (const button of elements.lootRecords.querySelectorAll("[data-loot-save]")) {
+      button.addEventListener("click", () => saveLootRecord(button.dataset.lootSave));
+    }
+    for (const button of elements.lootRecords.querySelectorAll("[data-loot-delete]")) {
+      button.addEventListener("click", () => deleteLootRecord(button.dataset.lootDelete));
+    }
+  }
+}
+
+function renderLootRecordRow(record, isAdmin) {
+  const content = [
+    `<span class="loot-fixed">${escapeHtml(record.activityTime || "时间待定")}</span>`,
+    `<span class="loot-fixed">${escapeHtml(record.activityContent || appState.activity?.title || "活动")}</span>`
+  ];
+
+  if (isAdmin) {
+    content.push(
+      `<input class="loot-input" data-loot-field="blackPlayers" data-loot-id="${escapeHtml(record.id)}" value="${escapeHtml(record.blackPlayers || "")}" placeholder="例如：QQ / ID / 原因" maxlength="120" />`,
+      `<input class="loot-input" data-loot-field="specialDrops" data-loot-id="${escapeHtml(record.id)}" value="${escapeHtml(record.specialDrops || "")}" placeholder="例如：玄晶 / 稀有挂件" maxlength="180" />`,
+      `<input class="loot-input" data-loot-field="salary" data-loot-id="${escapeHtml(record.id)}" value="${escapeHtml(record.salary || "")}" placeholder="例如：12000G" maxlength="80" />`,
+      `<span class="loot-actions"><button class="primary-button tiny-button" type="button" data-loot-save="${escapeHtml(record.id)}">保存</button><button class="danger-button tiny-button" type="button" data-loot-delete="${escapeHtml(record.id)}">删除</button></span>`
+    );
+  } else {
+    content.push(
+      `<span>${escapeHtml(record.blackPlayers || "未填写")}</span>`,
+      `<span>${escapeHtml(record.specialDrops || "未填写")}</span>`,
+      `<span>${escapeHtml(record.salary || "未填写")}</span>`
+    );
+  }
+
+  return `<div class="loot-row" role="row" data-loot-row="${escapeHtml(record.id)}">${content.join("")}</div>`;
+}
+
+function lootRecordPayload(recordId) {
+  const row = Array.from(elements.lootRecords.querySelectorAll("[data-loot-row]"))
+    .find((item) => item.dataset.lootRow === recordId);
+  const value = (field) => row?.querySelector(`[data-loot-field="${field}"]`)?.value || "";
+  return {
+    blackPlayers: value("blackPlayers"),
+    specialDrops: value("specialDrops"),
+    salary: value("salary")
+  };
+}
+
+async function saveLootRecord(recordId) {
+  try {
+    appState = await api(`/api/loot-records/${encodeURIComponent(recordId)}`, {
+      method: "POST",
+      body: JSON.stringify(lootRecordPayload(recordId))
+    });
+    renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
+    showToast("爆装备记录已保存", "success");
+  } catch (error) {
+    await handleConflictError(error, { preserveAdminForm: true });
+  }
+}
+
+async function deleteLootRecord(recordId) {
+  if (!confirm("确定删除这条爆装备记录吗？")) {
+    return;
+  }
+  try {
+    appState = await api(`/api/loot-records/${encodeURIComponent(recordId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ activityId: selectedActivityId })
+    });
+    renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
+    showToast("爆装备记录已删除", "success");
+  } catch (error) {
+    await handleConflictError(error, { preserveAdminForm: true });
+  }
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -777,6 +908,8 @@ function renderAll(options = {}) {
   renderSummary();
   renderAdminPanel(options);
   renderBoard();
+  renderLootRecords(options);
+  renderViewChrome();
 }
 
 async function loadState(options = {}) {
@@ -1388,6 +1521,19 @@ elements.refreshBtn.addEventListener("click", async () => {
   resetAutoRefreshDelay();
   await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
   showToast("名册已刷新");
+});
+elements.showFengshenBtn.addEventListener("click", () => {
+  setView("fengshen");
+  elements.fengshenPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+elements.backFromFengshenBtn.addEventListener("click", () => {
+  setView("signup");
+  elements.activityListSection.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+elements.refreshFengshenBtn.addEventListener("click", async () => {
+  resetAutoRefreshDelay();
+  await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true, forceLootRender: true });
+  showToast("封神榜已刷新");
 });
 elements.backToListBtn.addEventListener("click", () => {
   elements.activityListSection.scrollIntoView({ behavior: "smooth", block: "start" });

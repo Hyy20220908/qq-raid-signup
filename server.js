@@ -85,6 +85,8 @@ const roleOptions = {
   boss: allSpecs
 };
 
+const DEFAULT_SEASON_ID = "current";
+
 const adminTokens = new Set();
 
 function newActivity(overrides = {}) {
@@ -109,6 +111,170 @@ function newActivity(overrides = {}) {
   };
 }
 
+function lootActivityTime(activity) {
+  if (activity.startTime && activity.endTime) {
+    return `${activity.startTime} - ${activity.endTime}`;
+  }
+  return activity.startTime || activity.endTime || "时间待定";
+}
+
+function lootActivityContent(activity) {
+  const difficulty = activity.difficulty === "hero" ? "英雄" : "普通";
+  const type = sanitizeText(activity.type || "普通活动", 40);
+  return `${activity.title || "未命名活动"} · ${difficulty} · ${type}`;
+}
+
+function defaultSeason(overrides = {}) {
+  const now = new Date().toISOString();
+  return {
+    id: sanitizeText(overrides.id || DEFAULT_SEASON_ID, 80) || DEFAULT_SEASON_ID,
+    name: sanitizeText(overrides.name || "当前赛季", 40) || "当前赛季",
+    active: overrides.active !== false,
+    createdAt: overrides.createdAt || now,
+    updatedAt: overrides.updatedAt || now
+  };
+}
+
+function getCurrentSeasonId(db) {
+  return sanitizeText(db.currentSeasonId || DEFAULT_SEASON_ID, 80) || DEFAULT_SEASON_ID;
+}
+
+function newLootRecord(activity, overrides = {}) {
+  const now = new Date().toISOString();
+  return {
+    id: overrides.id || crypto.randomUUID(),
+    seasonId: sanitizeText(overrides.seasonId || DEFAULT_SEASON_ID, 80) || DEFAULT_SEASON_ID,
+    activityId: activity.id,
+    activityTime: lootActivityTime(activity),
+    activityContent: lootActivityContent(activity),
+    blackPlayers: sanitizeText(overrides.blackPlayers, 120),
+    specialDrops: sanitizeText(overrides.specialDrops, 180),
+    salary: sanitizeText(overrides.salary, 80),
+    createdAt: overrides.createdAt || now,
+    updatedAt: overrides.updatedAt || now
+  };
+}
+
+function normalizeLootRecord(record, activity, seasonId = DEFAULT_SEASON_ID) {
+  return newLootRecord(activity, { ...(record || {}), seasonId });
+}
+
+function hasLootRecordContent(record) {
+  return Boolean(record?.blackPlayers || record?.specialDrops || record?.salary);
+}
+
+function lootActivitySortTime(activity) {
+  return Date.parse(activity.endTime || activity.startTime || activity.updatedAt || activity.createdAt || "") || 0;
+}
+
+function ensureSeasonCollections(db) {
+  db.currentSeasonId = getCurrentSeasonId(db);
+  db.seasons = Array.isArray(db.seasons) ? db.seasons.map((season) => defaultSeason(season)) : [];
+  let season = db.seasons.find((item) => item.id === db.currentSeasonId);
+  if (!season) {
+    season = defaultSeason({ id: db.currentSeasonId });
+    db.seasons.unshift(season);
+  }
+  db.seasonLootRecords =
+    db.seasonLootRecords && typeof db.seasonLootRecords === "object" && !Array.isArray(db.seasonLootRecords)
+      ? db.seasonLootRecords
+      : {};
+  db.seasonLootRecordDeleted =
+    db.seasonLootRecordDeleted && typeof db.seasonLootRecordDeleted === "object" && !Array.isArray(db.seasonLootRecordDeleted)
+      ? db.seasonLootRecordDeleted
+      : {};
+  db.seasonLootRecords[season.id] = Array.isArray(db.seasonLootRecords[season.id])
+    ? db.seasonLootRecords[season.id]
+    : [];
+  db.seasonLootRecordDeleted[season.id] =
+    db.seasonLootRecordDeleted[season.id] && typeof db.seasonLootRecordDeleted[season.id] === "object"
+      ? db.seasonLootRecordDeleted[season.id]
+      : {};
+  return season;
+}
+
+function ensureSeasonLootRecords(db) {
+  const season = ensureSeasonCollections(db);
+  const seasonId = season.id;
+  const hidden = db.seasonLootRecordDeleted[seasonId] || {};
+  const activities = db.activities || [];
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+  const recordsByActivity = new Map();
+
+  const rememberRecord = (record, activity) => {
+    if (!activity || hidden[activity.id]) {
+      return;
+    }
+    recordsByActivity.set(activity.id, normalizeLootRecord(record, activity, seasonId));
+  };
+
+  for (const record of db.seasonLootRecords[seasonId] || []) {
+    rememberRecord(record, activityById.get(record.activityId));
+  }
+
+  if (db.lootRecords && typeof db.lootRecords === "object" && !Array.isArray(db.lootRecords)) {
+    for (const [activityId, legacyRecords] of Object.entries(db.lootRecords)) {
+      const activity = activityById.get(activityId);
+      if (!activity || hidden[activity.id] || !Array.isArray(legacyRecords)) {
+        continue;
+      }
+      for (const record of legacyRecords) {
+        if (activity.status === "ended" || hasLootRecordContent(record)) {
+          rememberRecord(record, activity);
+        }
+      }
+    }
+  }
+
+  for (const activity of activities) {
+    if (activity.status === "ended" && !hidden[activity.id] && !recordsByActivity.has(activity.id)) {
+      rememberRecord(newLootRecord(activity, { seasonId }), activity);
+    }
+  }
+
+  db.seasonLootRecords[seasonId] = Array.from(recordsByActivity.values()).sort((a, b) => {
+    const activityA = activityById.get(a.activityId) || {};
+    const activityB = activityById.get(b.activityId) || {};
+    return lootActivitySortTime(activityB) - lootActivitySortTime(activityA);
+  });
+  return season;
+}
+
+function syncSeasonLootRecordForActivity(db, activity, options = {}) {
+  const season = ensureSeasonLootRecords(db);
+  const seasonId = season.id;
+  const hidden = db.seasonLootRecordDeleted[seasonId] || {};
+  if (options.forceRestore) {
+    delete hidden[activity.id];
+  }
+
+  if (activity.status !== "ended") {
+    db.seasonLootRecords[seasonId] = (db.seasonLootRecords[seasonId] || [])
+      .filter((record) => record.activityId !== activity.id);
+    return;
+  }
+
+  if (hidden[activity.id]) {
+    return;
+  }
+
+  const records = db.seasonLootRecords[seasonId] || [];
+  const index = records.findIndex((record) => record.activityId === activity.id);
+  if (index === -1) {
+    records.push(newLootRecord(activity, { seasonId }));
+  } else {
+    records[index] = normalizeLootRecord(records[index], activity, seasonId);
+  }
+  ensureSeasonLootRecords(db);
+}
+
+function removeSeasonLootRecordsForActivity(db, activityId) {
+  const season = ensureSeasonCollections(db);
+  db.seasonLootRecords[season.id] = (db.seasonLootRecords[season.id] || [])
+    .filter((record) => record.activityId !== activityId);
+  delete db.seasonLootRecordDeleted[season.id]?.[activityId];
+}
+
 function defaultDb() {
   const activity = newActivity({
     title: "25人副本报名",
@@ -116,14 +282,23 @@ function defaultDb() {
     updatedBy: "system"
   });
   return {
-    version: 3,
+    version: 4,
     selectedActivityId: activity.id,
+    currentSeasonId: DEFAULT_SEASON_ID,
+    seasons: [defaultSeason()],
     activities: [activity],
     signups: {
       [activity.id]: {}
     },
     drafts: {
       [activity.id]: {}
+    },
+    lootRecords: {},
+    seasonLootRecords: {
+      [DEFAULT_SEASON_ID]: []
+    },
+    seasonLootRecordDeleted: {
+      [DEFAULT_SEASON_ID]: {}
     },
     adminPassword: null,
     settings: defaultSettings(),
@@ -292,9 +467,10 @@ function migrateDb(db) {
       db.signups[activity.id] = db.signups[activity.id] || {};
       db.drafts[activity.id] = db.drafts[activity.id] || {};
     }
+    ensureSeasonLootRecords(db);
     db.audit = Array.isArray(db.audit) ? db.audit : [];
     db.selectedActivityId = db.selectedActivityId || db.activities[0]?.id || "";
-    db.version = 3;
+    db.version = 4;
     return db;
   }
 
@@ -310,9 +486,11 @@ function migrateDb(db) {
   const legacySignups = isSlotSignupMap(db.signups) ? db.signups : {};
   const legacyDrafts = isSlotSignupMap(db.drafts) ? db.drafts : {};
 
-  return {
-    version: 3,
+  const nextDb = {
+    version: 4,
     selectedActivityId: activity.id,
+    currentSeasonId: DEFAULT_SEASON_ID,
+    seasons: [defaultSeason()],
     activities: [activity],
     signups: {
       [activity.id]: legacySignups
@@ -320,8 +498,15 @@ function migrateDb(db) {
     drafts: {
       [activity.id]: legacyDrafts
     },
+    lootRecords: {},
+    seasonLootRecords: {},
+    seasonLootRecordDeleted: {},
+    adminPassword: db.adminPassword || null,
+    settings: db.settings || defaultSettings(),
     audit: Array.isArray(db.audit) ? db.audit : []
   };
+  ensureSeasonLootRecords(nextDb);
+  return nextDb;
 }
 
 // ─── 内存缓存 + 写入队列 ───
@@ -839,6 +1024,8 @@ function publicDrafts(req, drafts) {
 function publicState(db, req, activityId) {
   const activity = getActivity(db, activityId);
   const maps = getActivityMaps(db, activity.id);
+  const season = ensureSeasonLootRecords(db);
+  const seasonLootRecords = db.seasonLootRecords?.[season.id] || [];
   return {
     ok: true,
     selectedActivityId: activity.id,
@@ -847,6 +1034,9 @@ function publicState(db, req, activityId) {
     slots: buildSlots(activity),
     signups: maps.signups,
     drafts: publicDrafts(req, maps.drafts),
+    season,
+    seasonLootRecords,
+    lootRecords: seasonLootRecords,
     options: {
       roles: roleLabels,
       specs: roleOptions
@@ -1150,6 +1340,7 @@ async function handleApi(req, res) {
       db.activities.push(activity);
       db.signups[activity.id] = {};
       db.drafts[activity.id] = {};
+      syncSeasonLootRecordForActivity(db, activity, { forceRestore: activity.status === "ended" });
       db.selectedActivityId = activity.id;
       appendAudit(db, {
         actor: "admin",
@@ -1194,6 +1385,8 @@ async function handleApi(req, res) {
       db.activities.splice(index, 1);
       delete db.signups[activityId];
       delete db.drafts[activityId];
+      delete db.lootRecords?.[activityId];
+      removeSeasonLootRecordsForActivity(db, activityId);
       appendAudit(db, {
         actor: "admin",
         action: "activity:delete",
@@ -1307,6 +1500,9 @@ async function handleApi(req, res) {
 
       const index = db.activities.findIndex((item) => item.id === activity.id);
       db.activities[index] = nextActivity;
+      syncSeasonLootRecordForActivity(db, nextActivity, {
+        forceRestore: before.status !== "ended" && nextActivity.status === "ended"
+      });
       db.selectedActivityId = nextActivity.id;
       appendAudit(db, {
         actor: "admin",
@@ -1365,6 +1561,110 @@ async function handleApi(req, res) {
       });
       writeDb(db);
       sendJson(res, 200, publicState(db, req, activity.id));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/loot-records") {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
+      const body = await readBody(req);
+      const db = readDb();
+      const activity = body.activityId
+        ? db.activities.find((item) => item.id === sanitizeText(body.activityId, 80))
+        : null;
+      if (body.activityId && !activity) {
+        sendError(res, 404, "活动不存在");
+        return;
+      }
+      if (activity && activity.status === "ended") {
+        syncSeasonLootRecordForActivity(db, activity, { forceRestore: true });
+      } else {
+        ensureSeasonLootRecords(db);
+      }
+      appendAudit(db, {
+        actor: "admin",
+        action: "loot:sync",
+        activityId: activity?.id || db.selectedActivityId,
+        target: activity?.title || "当前赛季",
+        before: null,
+        after: db.seasonLootRecords?.[getCurrentSeasonId(db)] || [],
+        summary: "同步封神榜记录"
+      });
+      writeDb(db);
+      sendJson(res, 200, publicState(db, req, activity?.id || db.selectedActivityId));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/loot-records/")) {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
+      const recordId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/loot-records/", "")), 80);
+      const body = await readBody(req);
+      const db = readDb();
+      const season = ensureSeasonLootRecords(db);
+      const records = db.seasonLootRecords[season.id] || [];
+      const index = records.findIndex((record) => record.id === recordId);
+      if (index === -1) {
+        sendError(res, 404, "记录不存在");
+        return;
+      }
+      const before = records[index];
+      const activity = getActivity(db, before.activityId);
+      const next = {
+        ...normalizeLootRecord(before, activity, season.id),
+        blackPlayers: sanitizeText(body.blackPlayers, 120),
+        specialDrops: sanitizeText(body.specialDrops, 180),
+        salary: sanitizeText(body.salary, 80),
+        updatedAt: new Date().toISOString()
+      };
+      records[index] = next;
+      appendAudit(db, {
+        actor: "admin",
+        action: "loot:update",
+        activityId: activity.id,
+        target: activity.title,
+        before,
+        after: next,
+        summary: `更新爆装备记录：${activity.title}`
+      });
+      writeDb(db);
+      sendJson(res, 200, publicState(db, req, body.activityId || activity.id));
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/loot-records/")) {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
+      const recordId = sanitizeText(decodeURIComponent(url.pathname.replace("/api/loot-records/", "")), 80);
+      const body = await readBody(req).catch(() => ({}));
+      const db = readDb();
+      const season = ensureSeasonLootRecords(db);
+      const records = db.seasonLootRecords[season.id] || [];
+      const index = records.findIndex((record) => record.id === recordId);
+      if (index === -1) {
+        sendError(res, 404, "记录不存在");
+        return;
+      }
+      const [removed] = records.splice(index, 1);
+      db.seasonLootRecordDeleted[season.id][removed.activityId] = true;
+      const activity = getActivity(db, removed.activityId);
+      appendAudit(db, {
+        actor: "admin",
+        action: "loot:delete",
+        activityId: activity.id,
+        target: activity.title,
+        before: removed,
+        after: null,
+        summary: `删除爆装备记录：${activity.title}`
+      });
+      writeDb(db);
+      sendJson(res, 200, publicState(db, req, body.activityId || activity.id));
       return;
     }
 

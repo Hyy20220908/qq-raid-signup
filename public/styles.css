@@ -166,9 +166,12 @@ p {
 
 .summary-band,
 .work-section,
+.home-actions,
 .activity-list-section,
 .admin-section,
-.board-section {
+.board-section,
+.loot-section,
+.fengshen-panel {
   position: relative;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
@@ -277,9 +280,12 @@ p {
 }
 
 .work-section,
+.home-actions,
 .activity-list-section,
 .admin-section,
-.board-section {
+.board-section,
+.loot-section,
+.fengshen-panel {
   margin-top: 16px;
   padding: 18px;
 }
@@ -309,6 +315,67 @@ p {
   font-size: 19px;
   font-weight: 700;
   line-height: 1.25;
+}
+
+.home-actions {
+  padding: 0;
+  overflow: hidden;
+}
+
+.fengshen-entry {
+  display: flex;
+  width: 100%;
+  min-height: 88px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 0;
+  padding: 20px 22px;
+  color: var(--ink);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 248, 230, 0.92)),
+    var(--paper);
+  text-align: left;
+}
+
+.fengshen-entry::after {
+  content: ">";
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(178, 118, 0, 0.18);
+  border-radius: 50%;
+  color: var(--gold);
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.fengshen-entry:hover {
+  background:
+    linear-gradient(135deg, #ffffff, rgba(255, 244, 212, 0.96)),
+    var(--paper);
+}
+
+.fengshen-main,
+.fengshen-sub {
+  display: block;
+}
+
+.fengshen-main {
+  color: #7a4d00;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.fengshen-sub {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .inline-form {
@@ -954,6 +1021,78 @@ button:active {
   color: var(--cinnabar);
 }
 
+.loot-section {
+  display: grid;
+  gap: 14px;
+}
+
+.loot-records {
+  overflow-x: auto;
+}
+
+.loot-table {
+  min-width: 940px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.loot-row {
+  display: grid;
+  grid-template-columns: 1.15fr 1.35fr 1fr 1.2fr 0.8fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.loot-table.viewer .loot-row {
+  grid-template-columns: 1.15fr 1.35fr 1fr 1.2fr 0.8fr;
+}
+
+.loot-row:first-child {
+  border-top: 0;
+}
+
+.loot-head {
+  color: var(--ink-muted);
+  background: var(--paper-deep);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.loot-fixed {
+  color: var(--ink-soft);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.loot-input {
+  min-height: 34px;
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.loot-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.tiny-button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.empty-state.compact {
+  padding: 14px;
+  text-align: left;
+}
+
 .boss-toggle-row {
   display: flex;
   align-items: center;
@@ -1245,10 +1384,26 @@ button:active {
 
   .summary-band,
   .work-section,
+  .home-actions,
   .activity-list-section,
   .admin-section,
-  .board-section {
+  .board-section,
+  .loot-section,
+  .fengshen-panel {
     padding: 14px;
+  }
+
+  .home-actions {
+    padding: 0;
+  }
+
+  .fengshen-entry {
+    min-height: 76px;
+    padding: 16px;
+  }
+
+  .fengshen-main {
+    font-size: 24px;
   }
 
   .summary-main h2 {
@@ -1341,5 +1496,41 @@ button:active {
   .board-5x5 .slot-tag {
     min-height: 22px;
     padding: 2px 7px;
+  }
+
+  .loot-records {
+    overflow-x: visible;
+  }
+
+  .loot-table {
+    min-width: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .loot-head {
+    display: none;
+  }
+
+  .loot-row {
+    grid-template-columns: 1fr;
+    gap: 7px;
+    margin-bottom: 10px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.76);
+  }
+
+  .loot-row > span,
+  .loot-row > input {
+    width: 100%;
+  }
+
+  .loot-actions {
+    justify-content: stretch;
+  }
+
+  .loot-actions button {
+    flex: 1;
   }
 }

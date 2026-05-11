@@ -45,6 +45,27 @@
           </form>
         </section>
 
+        <section id="homeActions" class="home-actions" aria-label="快捷入口">
+          <button id="showFengshenBtn" class="fengshen-entry" type="button">
+            <span class="fengshen-main">封神榜</span>
+            <span class="fengshen-sub">查看当前赛季爆装备记录</span>
+          </button>
+        </section>
+
+        <section id="fengshenPanel" class="fengshen-panel" aria-label="封神榜" hidden>
+          <div class="section-heading board-heading">
+            <div>
+              <h2>封神榜</h2>
+              <p id="fengshenSeasonLabel">当前赛季爆装备记录</p>
+            </div>
+            <div class="tool-row compact-tools">
+              <button id="backFromFengshenBtn" class="ghost-button" type="button">返回报名</button>
+              <button id="refreshFengshenBtn" class="ghost-button" type="button">刷新</button>
+            </div>
+          </div>
+          <div id="lootRecords" class="loot-records"></div>
+        </section>
+
         <section id="activityListSection" class="activity-list-section" aria-label="活动列表">
           <div class="section-heading">
             <div>
@@ -219,6 +240,7 @@
             </div>
             <div id="board" class="board"></div>
           </section>
+
         </div>
       </main>
     </div>
