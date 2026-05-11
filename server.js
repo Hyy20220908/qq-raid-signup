@@ -1578,6 +1578,24 @@ async function handleApi(req, res) {
         sendError(res, 404, "活动不存在");
         return;
       }
+      if (!activity && body.restoreDeleted === true) {
+        const season = ensureSeasonCollections(db);
+        const beforeDeleted = Object.keys(db.seasonLootRecordDeleted[season.id] || {});
+        db.seasonLootRecordDeleted[season.id] = {};
+        ensureSeasonLootRecords(db);
+        appendAudit(db, {
+          actor: "admin",
+          action: "loot:restore",
+          activityId: db.selectedActivityId,
+          target: season.name,
+          before: { deletedActivityIds: beforeDeleted },
+          after: db.seasonLootRecords?.[season.id] || [],
+          summary: "恢复当前赛季结束活动到封神榜"
+        });
+        writeDb(db);
+        sendJson(res, 200, publicState(db, req, db.selectedActivityId));
+        return;
+      }
       if (activity && activity.status === "ended") {
         syncSeasonLootRecordForActivity(db, activity, { forceRestore: true });
       } else {

@@ -46,6 +46,7 @@ const elements = {
   fengshenPanel: document.querySelector("#fengshenPanel"),
   fengshenSeasonLabel: document.querySelector("#fengshenSeasonLabel"),
   backFromFengshenBtn: document.querySelector("#backFromFengshenBtn"),
+  syncFengshenBtn: document.querySelector("#syncFengshenBtn"),
   refreshFengshenBtn: document.querySelector("#refreshFengshenBtn"),
   activityListSection: document.querySelector("#activityListSection"),
   activityCards: document.querySelector("#activityCards"),
@@ -773,6 +774,7 @@ function renderLootRecords(options = {}) {
   }
   const seasonName = appState?.season?.name || "当前赛季";
   elements.fengshenSeasonLabel.textContent = `${seasonName} · 已结束活动自动入榜`;
+  elements.syncFengshenBtn.hidden = !isAdmin;
   if (!records.length) {
     elements.lootRecords.innerHTML = `<div class="empty-state compact">暂无封神榜记录。活动结束后会自动进入这里。</div>`;
     return;
@@ -861,6 +863,22 @@ async function deleteLootRecord(recordId) {
     });
     renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
     showToast("爆装备记录已删除", "success");
+  } catch (error) {
+    await handleConflictError(error, { preserveAdminForm: true });
+  }
+}
+
+async function restoreSeasonLootRecords() {
+  if (!appState?.isAdmin) {
+    return;
+  }
+  try {
+    appState = await api("/api/loot-records", {
+      method: "POST",
+      body: JSON.stringify({ restoreDeleted: true })
+    });
+    renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
+    showToast("已恢复当前赛季结束活动", "success");
   } catch (error) {
     await handleConflictError(error, { preserveAdminForm: true });
   }
@@ -1530,6 +1548,7 @@ elements.backFromFengshenBtn.addEventListener("click", () => {
   setView("signup");
   elements.activityListSection.scrollIntoView({ behavior: "smooth", block: "start" });
 });
+elements.syncFengshenBtn.addEventListener("click", restoreSeasonLootRecords);
 elements.refreshFengshenBtn.addEventListener("click", async () => {
   resetAutoRefreshDelay();
   await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true, forceLootRender: true });
