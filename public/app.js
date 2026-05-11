@@ -381,8 +381,8 @@ function renderActivityCards() {
             <span>${escapeHtml(formatTimeRange(activity))}</span>
           </div>
           <div class="activity-card-foot">
-            <span>创建者：${escapeHtml(activity.creatorLabel)}</span>
-            <span>${activity.signed}/${activity.total} 已报名</span>
+            <span class="activity-creator">创建者：${escapeHtml(activity.creatorLabel)}</span>
+            <span class="activity-signup-count">${activity.signed}/${activity.total} 已报名</span>
           </div>
           <button class="primary-button detail-button" type="button" data-activity-id="${activity.id}">查看详情</button>
         </article>
@@ -760,7 +760,7 @@ function renderSignupBody(role, signup) {
 
   return `
     <span class="signup-summary">
-      <span class="slot-id">${escapeHtml(signup.signupId)}</span>
+      <span class="slot-id" title="${escapeHtml(signup.signupId)}">${escapeHtml(signup.signupId)}</span>
       <span class="slot-detail">${meta.join("")}</span>
     </span>
   `;

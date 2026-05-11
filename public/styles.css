@@ -483,6 +483,7 @@ button:active {
 .activity-card {
   position: relative;
   display: grid;
+  grid-template-rows: auto auto auto 1fr;
   align-content: start;
   gap: 9px;
   min-height: 136px;
@@ -550,6 +551,24 @@ button:active {
   flex-wrap: wrap;
 }
 
+.activity-card-foot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: start;
+  gap: 4px;
+}
+
+.activity-creator {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-signup-count {
+  display: block;
+}
+
 .activity-status,
 .difficulty-pill,
 .selected-marker {
@@ -565,6 +584,7 @@ button:active {
 }
 
 .activity-card .detail-button {
+  align-self: end;
   min-height: 34px;
   padding: 6px 10px;
   font-size: 13px;
@@ -780,7 +800,7 @@ button:active {
 
 .board-5x5 .slot-card.occupied .slot-id {
   font-size: 19px;
-  line-height: 1.28;
+  line-height: 1.12;
 }
 
 .board-5x5 .slot-detail {
@@ -873,6 +893,25 @@ button:active {
 
 .slot-card.occupied .slot-top {
   justify-content: flex-end;
+  min-height: 18px;
+}
+
+.slot-card.occupied {
+  gap: 3px;
+  padding-top: 7px;
+}
+
+.slot-card.occupied .slot-body {
+  align-content: start;
+}
+
+.slot-card.occupied .signup-summary {
+  align-self: start;
+  align-content: start;
+}
+
+.slot-card.occupied .slot-id {
+  -webkit-line-clamp: 1;
 }
 
 .slot-top {
