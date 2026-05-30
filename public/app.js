@@ -77,6 +77,7 @@ const elements = {
   newActivityBtn: document.querySelector("#newActivityBtn"),
   activitySubmitBtn: document.querySelector("#activitySubmitBtn"),
   refreshAuditBtn: document.querySelector("#refreshAuditBtn"),
+  clearAuditBtn: document.querySelector("#clearAuditBtn"),
   clearActivityBtn: document.querySelector("#clearActivityBtn"),
   adminLogoutBtn: document.querySelector("#adminLogoutBtn"),
   deleteActivityBtn: document.querySelector("#deleteActivityBtn"),
@@ -775,14 +776,21 @@ function renderLootRecords(options = {}) {
   const seasonName = appState?.season?.name || "当前赛季";
   elements.fengshenSeasonLabel.textContent = `${seasonName} · 已结束活动自动入榜`;
   elements.syncFengshenBtn.hidden = !isAdmin;
-  if (!records.length) {
-    elements.lootRecords.innerHTML = `<div class="empty-state compact">暂无封神榜记录。活动结束后会自动进入这里。</div>`;
-    return;
-  }
+  const adminToolbar = isAdmin
+    ? `<div class="loot-toolbar">
+        <button class="primary-button tiny-button" type="button" data-loot-add-row>新增行</button>
+        <button class="danger-button tiny-button" type="button" data-loot-batch-delete disabled>删除选中</button>
+        <span class="loot-bulk-status" data-loot-selection-count>未选择</span>
+      </div>`
+    : "";
+  const emptyState = `<div class="empty-state compact">暂无封神榜记录。活动结束后会自动进入这里。</div>`;
 
   elements.lootRecords.innerHTML = `
+    ${adminToolbar}
+    ${records.length ? `
     <div class="loot-table ${isAdmin ? "admin" : "viewer"}" role="table">
       <div class="loot-row loot-head" role="row">
+        ${isAdmin ? `<span class="loot-select-cell"><input class="loot-checkbox" type="checkbox" data-loot-select-all aria-label="全选封神榜记录" /></span>` : ""}
         <span>活动时间</span>
         <span>副本内容</span>
         <span>黑本人</span>
@@ -791,39 +799,59 @@ function renderLootRecords(options = {}) {
         ${isAdmin ? "<span>操作</span>" : ""}
       </div>
       ${records.map((record) => renderLootRecordRow(record, isAdmin)).join("")}
-    </div>
+    </div>` : emptyState}
   `;
 
   if (isAdmin) {
+    const addRowButton = elements.lootRecords.querySelector("[data-loot-add-row]");
+    addRowButton?.addEventListener("click", addLootRecord);
+    const batchDeleteButton = elements.lootRecords.querySelector("[data-loot-batch-delete]");
+    batchDeleteButton?.addEventListener("click", deleteSelectedLootRecords);
+    const selectAll = elements.lootRecords.querySelector("[data-loot-select-all]");
+    selectAll?.addEventListener("change", () => {
+      for (const checkbox of elements.lootRecords.querySelectorAll("[data-loot-select]")) {
+        checkbox.checked = selectAll.checked;
+      }
+      updateLootSelectionState();
+    });
+    for (const checkbox of elements.lootRecords.querySelectorAll("[data-loot-select]")) {
+      checkbox.addEventListener("change", updateLootSelectionState);
+    }
     for (const button of elements.lootRecords.querySelectorAll("[data-loot-save]")) {
       button.addEventListener("click", () => saveLootRecord(button.dataset.lootSave));
     }
     for (const button of elements.lootRecords.querySelectorAll("[data-loot-delete]")) {
       button.addEventListener("click", () => deleteLootRecord(button.dataset.lootDelete));
     }
+    for (const input of elements.lootRecords.querySelectorAll("[data-loot-field]")) {
+      input.addEventListener("input", () => updateLootRowDirtyState(input.closest("[data-loot-row]")));
+    }
+    updateAllLootSaveStates();
+    updateLootSelectionState();
   }
 }
 
 function renderLootRecordRow(record, isAdmin) {
+  if (isAdmin) {
+    const content = [
+      `<span class="loot-select-cell"><input class="loot-checkbox" type="checkbox" data-loot-select="${escapeHtml(record.id)}" aria-label="选择封神榜记录" /></span>`,
+      `<input class="loot-input" data-loot-field="activityTime" data-loot-id="${escapeHtml(record.id)}" data-original-value="${escapeHtml(record.activityTime || "")}" value="${escapeHtml(record.activityTime || "")}" placeholder="活动时间" maxlength="120" />`,
+      `<input class="loot-input" data-loot-field="activityContent" data-loot-id="${escapeHtml(record.id)}" data-original-value="${escapeHtml(record.activityContent || "")}" value="${escapeHtml(record.activityContent || "")}" placeholder="副本内容" maxlength="180" />`,
+      `<input class="loot-input" data-loot-field="blackPlayers" data-loot-id="${escapeHtml(record.id)}" data-original-value="${escapeHtml(record.blackPlayers || "")}" value="${escapeHtml(record.blackPlayers || "")}" placeholder="例如：QQ / ID / 原因" maxlength="120" />`,
+      `<input class="loot-input" data-loot-field="specialDrops" data-loot-id="${escapeHtml(record.id)}" data-original-value="${escapeHtml(record.specialDrops || "")}" value="${escapeHtml(record.specialDrops || "")}" placeholder="例如：玄晶 / 稀有挂件" maxlength="180" />`,
+      `<input class="loot-input" data-loot-field="salary" data-loot-id="${escapeHtml(record.id)}" data-original-value="${escapeHtml(record.salary || "")}" value="${escapeHtml(record.salary || "")}" placeholder="例如：12000G" maxlength="80" />`,
+      `<span class="loot-actions"><button class="primary-button tiny-button" type="button" data-loot-save="${escapeHtml(record.id)}" disabled>保存</button><button class="danger-button tiny-button" type="button" data-loot-delete="${escapeHtml(record.id)}">删除</button></span>`
+    ];
+    return `<div class="loot-row" role="row" data-loot-row="${escapeHtml(record.id)}">${content.join("")}</div>`;
+  }
+
   const content = [
     `<span class="loot-fixed">${escapeHtml(record.activityTime || "时间待定")}</span>`,
-    `<span class="loot-fixed">${escapeHtml(record.activityContent || appState.activity?.title || "活动")}</span>`
-  ];
-
-  if (isAdmin) {
-    content.push(
-      `<input class="loot-input" data-loot-field="blackPlayers" data-loot-id="${escapeHtml(record.id)}" value="${escapeHtml(record.blackPlayers || "")}" placeholder="例如：QQ / ID / 原因" maxlength="120" />`,
-      `<input class="loot-input" data-loot-field="specialDrops" data-loot-id="${escapeHtml(record.id)}" value="${escapeHtml(record.specialDrops || "")}" placeholder="例如：玄晶 / 稀有挂件" maxlength="180" />`,
-      `<input class="loot-input" data-loot-field="salary" data-loot-id="${escapeHtml(record.id)}" value="${escapeHtml(record.salary || "")}" placeholder="例如：12000G" maxlength="80" />`,
-      `<span class="loot-actions"><button class="primary-button tiny-button" type="button" data-loot-save="${escapeHtml(record.id)}">保存</button><button class="danger-button tiny-button" type="button" data-loot-delete="${escapeHtml(record.id)}">删除</button></span>`
-    );
-  } else {
-    content.push(
+    `<span class="loot-fixed">${escapeHtml(record.activityContent || appState.activity?.title || "活动")}</span>`,
       `<span>${escapeHtml(record.blackPlayers || "未填写")}</span>`,
       `<span>${escapeHtml(record.specialDrops || "未填写")}</span>`,
       `<span>${escapeHtml(record.salary || "未填写")}</span>`
-    );
-  }
+  ];
 
   return `<div class="loot-row" role="row" data-loot-row="${escapeHtml(record.id)}">${content.join("")}</div>`;
 }
@@ -833,10 +861,75 @@ function lootRecordPayload(recordId) {
     .find((item) => item.dataset.lootRow === recordId);
   const value = (field) => row?.querySelector(`[data-loot-field="${field}"]`)?.value || "";
   return {
+    activityTime: value("activityTime"),
+    activityContent: value("activityContent"),
     blackPlayers: value("blackPlayers"),
     specialDrops: value("specialDrops"),
     salary: value("salary")
   };
+}
+
+function selectedLootRecordIds() {
+  return Array.from(elements.lootRecords.querySelectorAll("[data-loot-select]:checked"))
+    .map((checkbox) => checkbox.dataset.lootSelect)
+    .filter(Boolean);
+}
+
+function updateLootSelectionState() {
+  const selectedIds = selectedLootRecordIds();
+  const total = elements.lootRecords.querySelectorAll("[data-loot-select]").length;
+  const batchDeleteButton = elements.lootRecords.querySelector("[data-loot-batch-delete]");
+  const status = elements.lootRecords.querySelector("[data-loot-selection-count]");
+  const selectAll = elements.lootRecords.querySelector("[data-loot-select-all]");
+  if (batchDeleteButton) {
+    batchDeleteButton.disabled = selectedIds.length === 0;
+  }
+  if (status) {
+    status.textContent = selectedIds.length ? `已选择 ${selectedIds.length} 行` : "未选择";
+  }
+  if (selectAll) {
+    selectAll.checked = total > 0 && selectedIds.length === total;
+    selectAll.indeterminate = selectedIds.length > 0 && selectedIds.length < total;
+  }
+}
+
+function lootRowIsDirty(row) {
+  if (!row) {
+    return false;
+  }
+  return Array.from(row.querySelectorAll("[data-loot-field]"))
+    .some((input) => input.value !== (input.dataset.originalValue || ""));
+}
+
+function updateLootRowDirtyState(row) {
+  if (!row) {
+    return;
+  }
+  const dirty = lootRowIsDirty(row);
+  row.classList.toggle("dirty", dirty);
+  const saveButton = row.querySelector("[data-loot-save]");
+  if (saveButton) {
+    saveButton.disabled = !dirty;
+  }
+}
+
+function updateAllLootSaveStates() {
+  for (const row of elements.lootRecords.querySelectorAll("[data-loot-row]")) {
+    updateLootRowDirtyState(row);
+  }
+}
+
+async function addLootRecord() {
+  try {
+    appState = await api("/api/loot-records", {
+      method: "POST",
+      body: JSON.stringify({ createManual: true })
+    });
+    renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
+    showToast("已新增封神榜记录", "success");
+  } catch (error) {
+    await handleConflictError(error, { preserveAdminForm: true });
+  }
 }
 
 async function saveLootRecord(recordId) {
@@ -847,6 +940,27 @@ async function saveLootRecord(recordId) {
     });
     renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
     showToast("爆装备记录已保存", "success");
+  } catch (error) {
+    await handleConflictError(error, { preserveAdminForm: true });
+  }
+}
+
+async function deleteSelectedLootRecords() {
+  const recordIds = selectedLootRecordIds();
+  if (!recordIds.length) {
+    showToast("请先选择要删除的记录");
+    return;
+  }
+  if (!confirm(`确定删除选中的 ${recordIds.length} 条封神榜记录吗？`)) {
+    return;
+  }
+  try {
+    appState = await api("/api/loot-records", {
+      method: "DELETE",
+      body: JSON.stringify({ recordIds })
+    });
+    renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
+    showToast("选中的封神榜记录已删除", "success");
   } catch (error) {
     await handleConflictError(error, { preserveAdminForm: true });
   }
@@ -1348,6 +1462,32 @@ async function loadAudit() {
   }
 }
 
+async function clearAudit() {
+  if (!appState?.isAdmin) {
+    return;
+  }
+  if (!confirm("确定清理后台填写记录吗？此操作不会影响活动、报名信息和封神榜数据。")) {
+    return;
+  }
+
+  const originalText = elements.clearAuditBtn.textContent;
+  elements.clearAuditBtn.disabled = true;
+  elements.clearAuditBtn.textContent = "清理中...";
+  try {
+    const payload = await api("/api/admin/audit", { method: "DELETE" });
+    elements.auditList.innerHTML = payload.audit.length
+      ? payload.audit.map(renderAuditItem).join("")
+      : `<div class="audit-item"><strong>暂无记录</strong><span>有填写或修改后会显示在这里。</span></div>`;
+    auditLoadedOnce = true;
+    showToast(`填写记录已清理 ${payload.clearedCount || 0} 条`, "success");
+  } catch (error) {
+    showToast(error.message || "清理失败", "error");
+  } finally {
+    elements.clearAuditBtn.disabled = false;
+    elements.clearAuditBtn.textContent = originalText;
+  }
+}
+
 function renderAuditItem(item) {
   const time = new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
@@ -1581,6 +1721,7 @@ elements.adminLoginForm.addEventListener("submit", submitAdminLogin);
 elements.activityForm.addEventListener("submit", submitActivity);
 elements.adminPasswordForm.addEventListener("submit", changeAdminPassword);
 elements.refreshAuditBtn.addEventListener("click", loadAudit);
+elements.clearAuditBtn.addEventListener("click", clearAudit);
 elements.clearActivityBtn.addEventListener("click", clearActivitySignups);
 elements.adminLogoutBtn.addEventListener("click", logoutAdmin);
 elements.deleteActivityBtn.addEventListener("click", deleteActivity);
