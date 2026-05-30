@@ -71,7 +71,7 @@
           <div class="section-heading">
             <div>
               <h2>活动列表</h2>
-              <p>选择一张活动卡进入报名名册。</p>
+              <p>只显示进行中的活动，结束后会自动归档。</p>
             </div>
             <button id="refreshActivitiesBtn" class="ghost-button" type="button">刷新</button>
           </div>
@@ -244,6 +244,19 @@
           </section>
 
         </div>
+
+        <section id="activityArchiveSection" class="activity-archive-section" aria-label="活动归档" hidden>
+          <details id="activityArchiveDetails" class="archive-details">
+            <summary class="archive-summary">
+              <span class="archive-heading">
+                <strong>活动归档</strong>
+                <span id="archiveSummaryText">已结束活动会收进这里，保留关键信息。</span>
+              </span>
+              <span id="archiveCount" class="archive-count">0 个已归档</span>
+            </summary>
+            <div id="activityArchiveList" class="archive-list"></div>
+          </details>
+        </section>
       </main>
     </div>
 

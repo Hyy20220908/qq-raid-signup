@@ -51,6 +51,11 @@ const elements = {
   activityListSection: document.querySelector("#activityListSection"),
   activityCards: document.querySelector("#activityCards"),
   emptyActivities: document.querySelector("#emptyActivities"),
+  activityArchiveSection: document.querySelector("#activityArchiveSection"),
+  activityArchiveDetails: document.querySelector("#activityArchiveDetails"),
+  activityArchiveList: document.querySelector("#activityArchiveList"),
+  archiveSummaryText: document.querySelector("#archiveSummaryText"),
+  archiveCount: document.querySelector("#archiveCount"),
   refreshActivitiesBtn: document.querySelector("#refreshActivitiesBtn"),
   detailPanel: document.querySelector("#detailPanel"),
   statusPill: document.querySelector("#statusPill"),
@@ -286,6 +291,39 @@ function formatTimeRange(activity) {
   return `${formatDateTime(activity.startTime) || "开始待定"} - ${formatDateTime(activity.endTime) || "结束待定"}`;
 }
 
+function activitySortTime(activity) {
+  return Date.parse(activity?.endTime || activity?.startTime || activity?.updatedAt || activity?.createdAt || "") || 0;
+}
+
+function isEndedActivity(activity) {
+  return activity?.status === "ended";
+}
+
+function activeActivities() {
+  return (appState?.activities || []).filter((activity) => !isEndedActivity(activity));
+}
+
+function archivedActivities() {
+  return (appState?.activities || [])
+    .filter(isEndedActivity)
+    .slice()
+    .sort((a, b) => activitySortTime(b) - activitySortTime(a));
+}
+
+async function redirectFromArchivedActivity(options = {}) {
+  if (options.keepArchivedActivity || !isEndedActivity(appState?.activity)) {
+    return false;
+  }
+  const nextActive = activeActivities()[0];
+  if (!nextActive || nextActive.id === appState.selectedActivityId) {
+    return false;
+  }
+  selectedActivityId = nextActive.id;
+  localStorage.setItem("selectedActivityId", selectedActivityId);
+  await loadState({ ...options, activityId: nextActive.id, keepArchivedActivity: true });
+  return true;
+}
+
 function toLocalInputValue(value) {
   if (!value) {
     return "";
@@ -334,6 +372,7 @@ function renderViewChrome() {
   elements.homeActions.hidden = fengshen;
   elements.fengshenPanel.hidden = !fengshen;
   elements.activityListSection.hidden = fengshen;
+  elements.activityArchiveSection.hidden = fengshen || archivedActivities().length === 0;
   if (fengshen) {
     elements.loginPanel.hidden = true;
     elements.adminPanel.hidden = true;
@@ -363,8 +402,12 @@ function renderUser() {
 }
 
 function renderActivityCards() {
-  const activities = appState.activities || [];
+  const activities = activeActivities();
+  const archivedCount = archivedActivities().length;
   elements.emptyActivities.hidden = activities.length > 0;
+  elements.emptyActivities.textContent = archivedCount
+    ? "当前没有进行中的活动，已结束活动已自动归档到页面底部。"
+    : "暂无活动，管理员可以在后台创建。";
   elements.activityCards.innerHTML = activities
     .map((activity) => {
       const selected = !isCreatingActivity && activity.id === selectedActivityId;
@@ -399,9 +442,33 @@ function renderActivityCards() {
   }
 }
 
+function renderArchivedActivities() {
+  const activities = archivedActivities();
+  if (!activities.length) {
+    elements.activityArchiveSection.hidden = true;
+    elements.activityArchiveList.innerHTML = "";
+    return;
+  }
+
+  elements.archiveCount.textContent = `${activities.length} 个已归档`;
+  elements.archiveSummaryText.textContent = "已结束活动会收进这里，报名区保持清爽，封神榜记录仍会保留。";
+  elements.activityArchiveList.innerHTML = activities
+    .map((activity) => `
+      <article class="archive-item">
+        <div class="archive-item-main">
+          <strong>${escapeHtml(activity.title)}</strong>
+          <span>${escapeHtml(activity.difficultyLabel)} · ${escapeHtml(activity.type || "普通活动")} · 创建者 ${escapeHtml(activity.creatorLabel)}</span>
+        </div>
+        <span class="archive-item-time">${escapeHtml(formatTimeRange(activity))}</span>
+        <span class="archive-item-count">${activity.signed}/${activity.total} 已报名</span>
+      </article>
+    `)
+    .join("");
+}
+
 function renderSummary() {
   const activity = appState.activity;
-  if (!activity) {
+  if (!activity || isEndedActivity(activity)) {
     elements.detailPanel.hidden = true;
     return;
   }
@@ -1037,6 +1104,7 @@ function renderAll(options = {}) {
   renderBrand();
   applyBackground();
   renderActivityCards();
+  renderArchivedActivities();
   renderSummary();
   renderAdminPanel(options);
   renderBoard();
@@ -1054,6 +1122,11 @@ async function loadState(options = {}) {
   appState = payload;
   currentStateRevision = Number(appState.revision || currentStateRevision || 0);
   selectedActivityId = appState.selectedActivityId;
+
+  if (await redirectFromArchivedActivity(options)) {
+    return true;
+  }
+
   if (selectedActivityId) {
     localStorage.setItem("selectedActivityId", selectedActivityId);
   }
@@ -1441,6 +1514,10 @@ async function submitActivity(event) {
     selectedActivityId = appState.selectedActivityId;
     localStorage.setItem("selectedActivityId", selectedActivityId);
     auditLoadedOnce = false;
+    if (await redirectFromArchivedActivity({ preserveAdminForm: false, skipAudit: true })) {
+      showToast(isCreate ? "活动已创建" : "活动已保存");
+      return;
+    }
     renderAll();
     showToast(isCreate ? "活动已创建" : "活动已保存");
   } catch (error) {
