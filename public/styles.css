@@ -722,6 +722,10 @@ button:active {
   padding: 12px 0;
 }
 
+.archive-item.has-actions {
+  grid-template-columns: minmax(180px, 1.35fr) minmax(170px, 1fr) auto auto;
+}
+
 .archive-item:last-child {
   border-bottom: 0;
   padding-bottom: 0;
@@ -763,6 +767,12 @@ button:active {
   background: rgba(255, 255, 255, 0.72);
   font-weight: 700;
   white-space: nowrap;
+}
+
+.archive-delete-button {
+  justify-self: end;
+  min-height: 30px;
+  padding: 5px 10px;
 }
 
 .admin-layout {
@@ -1777,8 +1787,17 @@ button:active {
     gap: 6px;
   }
 
+  .archive-item.has-actions {
+    grid-template-columns: 1fr;
+  }
+
   .archive-item-count {
     justify-self: start;
+  }
+
+  .archive-delete-button {
+    justify-self: stretch;
+    width: 100%;
   }
 
   .admin-form {

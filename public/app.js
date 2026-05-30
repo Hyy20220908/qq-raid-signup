@@ -444,6 +444,7 @@ function renderActivityCards() {
 
 function renderArchivedActivities() {
   const activities = archivedActivities();
+  const isAdmin = Boolean(appState?.isAdmin);
   if (!activities.length) {
     elements.activityArchiveSection.hidden = true;
     elements.activityArchiveList.innerHTML = "";
@@ -454,16 +455,21 @@ function renderArchivedActivities() {
   elements.archiveSummaryText.textContent = "已结束活动会收进这里，报名区保持清爽，封神榜记录仍会保留。";
   elements.activityArchiveList.innerHTML = activities
     .map((activity) => `
-      <article class="archive-item">
+      <article class="archive-item ${isAdmin ? "has-actions" : ""}">
         <div class="archive-item-main">
           <strong>${escapeHtml(activity.title)}</strong>
           <span>${escapeHtml(activity.difficultyLabel)} · ${escapeHtml(activity.type || "普通活动")} · 创建者 ${escapeHtml(activity.creatorLabel)}</span>
         </div>
         <span class="archive-item-time">${escapeHtml(formatTimeRange(activity))}</span>
         <span class="archive-item-count">${activity.signed}/${activity.total} 已报名</span>
+        ${isAdmin ? `<button class="danger-button tiny-button archive-delete-button" type="button" data-archive-delete="${escapeHtml(activity.id)}">删除</button>` : ""}
       </article>
     `)
     .join("");
+
+  for (const button of elements.activityArchiveList.querySelectorAll("[data-archive-delete]")) {
+    button.addEventListener("click", () => deleteArchivedActivity(button.dataset.archiveDelete));
+  }
 }
 
 function renderSummary() {
@@ -1603,6 +1609,35 @@ async function deleteActivity() {
     localStorage.removeItem("selectedActivityId");
     await loadState();
     showToast("活动已删除");
+  } catch (error) {
+    await handleConflictError(error, { preserveAdminForm: false });
+  }
+}
+
+async function deleteArchivedActivity(activityId) {
+  const activity = (appState?.activities || []).find((item) => item.id === activityId);
+  if (!activity) {
+    showToast("归档活动不存在");
+    return;
+  }
+  if (!confirm(`确定要删除归档活动「${activity.title}」吗？封神榜记录会保留。`)) {
+    return;
+  }
+  try {
+    await api(`/api/activities/${encodeURIComponent(activity.id)}`, {
+      method: "DELETE",
+      body: JSON.stringify({
+        expectedConfigRevision: activity.configRevision || 1,
+        expectedRosterRevision: activity.rosterRevision || 1
+      })
+    });
+    auditLoadedOnce = false;
+    if (selectedActivityId === activity.id) {
+      selectedActivityId = "";
+      localStorage.removeItem("selectedActivityId");
+    }
+    await loadState({ activityId: selectedActivityId });
+    showToast("归档活动已删除", "success");
   } catch (error) {
     await handleConflictError(error, { preserveAdminForm: false });
   }
