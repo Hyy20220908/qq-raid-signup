@@ -19,7 +19,26 @@ if (fs.existsSync(envPath)) {
 }
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
+function hasRailwayRuntimeEnv() {
+  return Object.keys(process.env).some((key) => key.startsWith("RAILWAY_"));
+}
+
+function normalizeOptionalPath(value) {
+  const text = String(value || "").trim();
+  return text ? path.resolve(text) : "";
+}
+
+function isSameOrInsidePath(targetPath, parentPath) {
+  const target = path.resolve(targetPath);
+  const parent = path.resolve(parentPath);
+  return target === parent || target.startsWith(parent.endsWith(path.sep) ? parent : `${parent}${path.sep}`);
+}
+
 function resolveDefaultDataDir() {
+  const railwayVolumeMountPath = normalizeOptionalPath(process.env.RAILWAY_VOLUME_MOUNT_PATH);
+  if (railwayVolumeMountPath) {
+    return railwayVolumeMountPath;
+  }
   const railwayVolumePath = "/data";
   if (process.platform !== "win32" && fs.existsSync(railwayVolumePath)) {
     return railwayVolumePath;
@@ -35,10 +54,12 @@ const LOG_FILE = process.env.LOG_FILE ? path.resolve(process.env.LOG_FILE) : pat
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DRAFT_TTL_MS = 90 * 1000;
 const PASSWORD_HASH_ITERATIONS = 210_000;
+const MAX_JSON_BODY_BYTES = 6 * 1024 * 1024;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const BOOT_ID = crypto.randomBytes(8).toString("hex");
 const ASSET_VERSION = encodeURIComponent(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || BOOT_ID);
 const SLOW_API_MS = Number(process.env.SLOW_API_MS || 1000);
+const ALLOW_EPHEMERAL_STORAGE = process.env.ALLOW_EPHEMERAL_STORAGE === "true";
 
 const tankSpecs = ["明尊", "洗髓", "铁牢", "铁骨"];
 const healerSpecs = ["云裳", "补天", "离经", "相知", "灵素"];
@@ -426,6 +447,75 @@ function logError(event, error, details = {}) {
   });
 }
 
+function getRailwayVolumeMountPath() {
+  return normalizeOptionalPath(process.env.RAILWAY_VOLUME_MOUNT_PATH);
+}
+
+function dbPathUsesRailwayVolume() {
+  const railwayVolumeMountPath = getRailwayVolumeMountPath();
+  return Boolean(railwayVolumeMountPath && isSameOrInsidePath(DB_PATH, railwayVolumeMountPath));
+}
+
+function dbPathUsesConventionalDataVolume() {
+  if (process.platform === "win32") {
+    return false;
+  }
+  return isSameOrInsidePath(DB_PATH, "/data") && fs.existsSync("/data");
+}
+
+function hasPersistentStoragePath() {
+  if (getRailwayVolumeMountPath()) {
+    return dbPathUsesRailwayVolume();
+  }
+  if (dbPathUsesConventionalDataVolume()) {
+    return true;
+  }
+  if (hasRailwayRuntimeEnv()) {
+    return false;
+  }
+  return false;
+}
+
+function describeStoragePath(filePath) {
+  const railwayVolumeMountPath = getRailwayVolumeMountPath();
+  if (railwayVolumeMountPath && isSameOrInsidePath(filePath, railwayVolumeMountPath)) {
+    const relative = path.relative(railwayVolumeMountPath, filePath);
+    return relative ? path.join("$RAILWAY_VOLUME_MOUNT_PATH", relative) : "$RAILWAY_VOLUME_MOUNT_PATH";
+  }
+  if (process.platform !== "win32" && isSameOrInsidePath(filePath, "/data")) {
+    return filePath;
+  }
+  const appRoot = path.resolve(__dirname);
+  if (isSameOrInsidePath(filePath, appRoot)) {
+    return path.relative(appRoot, filePath) || ".";
+  }
+  return path.basename(filePath);
+}
+
+function assertRailwayPersistentStorage() {
+  if (!hasRailwayRuntimeEnv() || hasPersistentStoragePath()) {
+    return;
+  }
+  const details = {
+    dbPath: describeStoragePath(DB_PATH),
+    dataDir: describeStoragePath(DATA_DIR),
+    railwayVolumeMountPath: process.env.RAILWAY_VOLUME_MOUNT_PATH || "",
+    allowEphemeralStorage: ALLOW_EPHEMERAL_STORAGE
+  };
+  if (ALLOW_EPHEMERAL_STORAGE) {
+    logEvent("error", "railway_ephemeral_storage_allowed", {
+      ...details,
+      message: "Railway is running without a mounted persistent volume. Data can reset after redeploy."
+    });
+    return;
+  }
+  logEvent("fatal", "railway_persistent_storage_missing", {
+    ...details,
+    message: "Create a Railway Volume and mount it, or set RAILWAY_VOLUME_MOUNT_PATH/DB_PATH to the mounted volume. Set ALLOW_EPHEMERAL_STORAGE=true only for temporary testing."
+  });
+  process.exit(1);
+}
+
 function defaultSettings() {
   return {
     brandLogo: "令",
@@ -589,6 +679,61 @@ function appendAudit(db, entry) {
   db.audit = db.audit.slice(0, 500);
 }
 
+function countStoredSignups(db) {
+  return Object.values(db.signups || {}).reduce((total, signups) => {
+    if (!signups || typeof signups !== "object" || Array.isArray(signups)) {
+      return total;
+    }
+    return total + Object.keys(signups).length;
+  }, 0);
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function extractRestoreDb(body) {
+  const candidate = body?.db || body?.reconstructedDb;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new Error("备份格式不正确");
+  }
+  if (!Array.isArray(candidate.activities) || !candidate.signups || typeof candidate.signups !== "object") {
+    throw new Error("备份缺少活动或报名数据");
+  }
+  return cloneJson(candidate);
+}
+
+function restoreDbFromBackup(currentDb, body) {
+  const importedDb = extractRestoreDb(body);
+  const nextDb = migrateDb(importedDb);
+  if (!Array.isArray(nextDb.activities) || nextDb.activities.length === 0) {
+    throw new Error("备份中没有可恢复的活动");
+  }
+  if (!nextDb.activities.some((activity) => activity.id === nextDb.selectedActivityId)) {
+    nextDb.selectedActivityId = nextDb.activities[0].id;
+  }
+  if (body.preserveAdminPassword !== false) {
+    nextDb.adminPassword = currentDb.adminPassword || nextDb.adminPassword || null;
+  }
+  ensureSeasonLootRecords(nextDb);
+  appendAudit(nextDb, {
+    actor: "admin",
+    action: "system:restore",
+    activityId: nextDb.selectedActivityId,
+    target: "database",
+    before: {
+      activities: currentDb.activities?.length || 0,
+      signups: countStoredSignups(currentDb)
+    },
+    after: {
+      activities: nextDb.activities.length,
+      signups: countStoredSignups(nextDb)
+    },
+    summary: "从备份恢复数据"
+  });
+  return nextDb;
+}
+
 function parseCookies(req) {
   const header = req.headers.cookie || "";
   return Object.fromEntries(
@@ -669,7 +814,7 @@ function readBody(req) {
     let raw = "";
     req.on("data", (chunk) => {
       raw += chunk;
-      if (raw.length > 1024 * 1024) {
+      if (raw.length > MAX_JSON_BODY_BYTES) {
         req.destroy();
         reject(new Error("请求体过大"));
       }
@@ -1202,8 +1347,12 @@ async function handleApi(req, res) {
           heapUsedMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
         },
         storage: {
-          persistentPathConfigured: Boolean(process.env.DB_PATH) || DEFAULT_DATA_DIR === "/data",
-          dataDir: DEFAULT_DATA_DIR === "/data" ? "/data" : "app-data",
+          persistentPathConfigured: hasPersistentStoragePath(),
+          railwayRuntime: hasRailwayRuntimeEnv(),
+          railwayVolumeMountPath: process.env.RAILWAY_VOLUME_MOUNT_PATH || "",
+          allowEphemeralStorage: ALLOW_EPHEMERAL_STORAGE,
+          dbPath: describeStoragePath(DB_PATH),
+          dataDir: describeStoragePath(DATA_DIR),
           logFileConfigured: Boolean(process.env.LOG_FILE)
         },
         node: process.version
@@ -1322,6 +1471,42 @@ async function handleApi(req, res) {
         writeDb(db);
       }
       sendJson(res, 200, { ok: true, audit: db.audit.slice(0, 200) });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/backup") {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
+      const db = readDb();
+      if (cleanupExpiredDrafts(db)) {
+        writeDb(db);
+        await waitForWrites(5000);
+      }
+      sendJson(res, 200, {
+        ok: true,
+        backedUpAt: new Date().toISOString(),
+        storage: {
+          dbPath: describeStoragePath(DB_PATH),
+          dataDir: describeStoragePath(DATA_DIR)
+        },
+        db: cloneJson(db)
+      });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/restore") {
+      if (!isAdmin(req)) {
+        sendError(res, 401, "需要管理员登录");
+        return;
+      }
+      const body = await readBody(req);
+      const currentDb = readDb();
+      const nextDb = restoreDbFromBackup(currentDb, body);
+      writeDb(nextDb);
+      await waitForWrites(5000);
+      sendJson(res, 200, publicState(nextDb, req, nextDb.selectedActivityId));
       return;
     }
 
@@ -2100,6 +2285,7 @@ process.on("unhandledRejection", (reason) => {
   shutdown("unhandledRejection", error);
 });
 
+assertRailwayPersistentStorage();
 ensureDb();
 server.listen(PORT, () => {
   logEvent("info", "server_started", {
@@ -2107,7 +2293,13 @@ server.listen(PORT, () => {
     dbPath: DB_PATH,
     logFile: LOG_FILE,
     bootId: BOOT_ID,
-    slowApiMs: SLOW_API_MS
+    slowApiMs: SLOW_API_MS,
+    storage: {
+      persistentPathConfigured: hasPersistentStoragePath(),
+      railwayRuntime: hasRailwayRuntimeEnv(),
+      railwayVolumeMountPath: process.env.RAILWAY_VOLUME_MOUNT_PATH || "",
+      dataDir: describeStoragePath(DATA_DIR)
+    }
   });
   if (!process.env.ADMIN_PASSWORD) {
     logEvent("warn", "default_admin_password_enabled", {

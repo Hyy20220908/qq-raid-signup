@@ -40,3 +40,22 @@ npm start
 ## 数据
 
 运行后数据会保存到 `data/db.json`。这个文件已被 `.gitignore` 忽略，避免把群友信息提交到仓库。
+
+## Railway 数据持久化
+
+Railway 重新部署会更换容器，容器内普通文件会丢失。生产环境必须创建 Railway Volume，并让数据库写入 Volume：
+
+1. 在 Railway 服务里创建并挂载 Volume。
+2. 推荐挂载路径使用 `/data`，并设置 `DB_PATH=/data/db.json`；也可以使用 Railway 提供的 `RAILWAY_VOLUME_MOUNT_PATH`，应用会自动把数据写到该挂载目录下。
+3. 部署后打开 `/api/health`，确认 `storage.persistentPathConfigured` 为 `true`。
+
+为避免再次静默重置数据，应用在 Railway 环境里如果检测不到持久化卷会拒绝启动。只有临时测试时才可以设置 `ALLOW_EPHEMERAL_STORAGE=true` 跳过这个保护。
+
+## 备份与恢复
+
+管理员登录后可以使用下面两个接口做数据迁移：
+
+- `GET /api/admin/backup`：导出完整 `db.json` 数据，包含活动、报名、封神榜、设置、审计记录和管理员密码哈希。
+- `POST /api/admin/restore`：恢复备份数据，请求体可以传 `{ "db": ... }` 或 `{ "reconstructedDb": ... }`。
+
+把 Railway 从临时磁盘迁移到 Volume 时，先备份，再部署 Volume 配置。恢复后再打开 `/api/health`，确认 `storage.persistentPathConfigured` 为 `true`。
