@@ -396,6 +396,7 @@ main > * {
 .activity-list-section {
   display: flex;
   flex-direction: column;
+  align-self: stretch;
   order: 20;
   grid-column: 1;
   max-height: calc(100vh - 100px);
