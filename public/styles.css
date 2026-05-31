@@ -85,7 +85,7 @@ main {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
   gap: 16px;
-  align-items: stretch;
+  align-items: start;
 }
 
 html[data-view="fengshen"] main,
@@ -390,15 +390,11 @@ main > * {
 .activity-list-section {
   position: sticky;
   top: 84px;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 0;
   order: 20;
   grid-column: 1;
-  align-self: stretch;
-  justify-self: stretch;
-  min-height: 100%;
-  overflow: hidden;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
 }
@@ -911,63 +907,21 @@ summary:focus-visible,
 }
 
 .admin-activity-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  display: flex;
   gap: 8px;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
 }
 
-.admin-activity-card {
-  display: grid;
-  gap: 5px;
-  min-height: 88px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  padding: 11px;
-  color: var(--ink-soft);
-  background: rgba(255, 255, 255, 0.72);
-  text-align: left;
-  box-shadow: none;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, transform 0.16s ease;
+.admin-activity-list .activity-card {
+  flex: 0 0 260px;
 }
 
-.admin-activity-card:hover {
-  border-color: rgba(0, 113, 227, 0.26);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--shadow-soft);
-  transform: translateY(-1px);
+.admin-activity-list .activity-card .detail-button {
+  display: none;
 }
-
-.admin-activity-card.selected {
-  border-color: rgba(0, 113, 227, 0.44);
-  background:
-    linear-gradient(180deg, rgba(0, 113, 227, 0.10), rgba(255, 255, 255, 0.94)),
-    #ffffff;
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.10);
-}
-
-.admin-activity-title {
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.admin-activity-meta,
-.admin-activity-count {
-  color: var(--ink-soft);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.admin-activity-count {
-  justify-self: start;
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: rgba(0, 0, 0, 0.045);
-  font-weight: 700;
 }
 
 .admin-form {
@@ -2092,10 +2046,6 @@ summary:focus-visible,
 
   .admin-picker-head > span {
     align-self: flex-start;
-  }
-
-  .admin-activity-list {
-    grid-template-columns: 1fr;
   }
 
   .archive-summary {

@@ -507,11 +507,23 @@ function renderAdminActivityPicker() {
               .map((activity) => {
                 const isSelected = !isCreatingActivity && activity.id === selectedActivityId;
                 return `
-                  <button class="admin-activity-card ${isSelected ? "selected" : ""}" type="button" data-admin-activity-id="${escapeHtml(activity.id)}" ${isSelected ? 'aria-current="true"' : ""}>
-                    <span class="admin-activity-title">${escapeHtml(activity.title)}</span>
-                    <span class="admin-activity-meta">${escapeHtml(activity.difficultyLabel)} · ${escapeHtml(formatTimeRange(activity))}</span>
-                    <span class="admin-activity-count">${activity.signed}/${activity.total} 已报名</span>
-                  </button>
+                  <article class="activity-card ${isSelected ? "selected" : ""}" data-admin-activity-id="${escapeHtml(activity.id)}" ${isSelected ? 'aria-current="true"' : ""}>
+                    <div class="activity-card-top">
+                      <strong class="activity-card-title">${escapeHtml(activity.title)}</strong>
+                      <span class="activity-card-badges">
+                        ${isSelected ? '<span class="selected-marker">当前编辑</span>' : ""}
+                        <span class="activity-status ${activity.status}">${escapeHtml(activity.statusLabel)}</span>
+                      </span>
+                    </div>
+                    <div class="activity-card-meta">
+                      <span class="difficulty-pill ${activity.difficulty}">${escapeHtml(activity.difficultyLabel)}</span>
+                      <span>${escapeHtml(formatTimeRange(activity))}</span>
+                    </div>
+                    <div class="activity-card-foot">
+                      <span class="activity-creator">创建者：${escapeHtml(activity.creatorLabel)}</span>
+                      <span class="activity-signup-count">${activity.signed}/${activity.total} 已报名</span>
+                    </div>
+                  </article>
                 `;
               })
               .join("")}
@@ -1979,7 +1991,21 @@ loadState()
   .then(() => {
     startStateEvents();
     startAutoRefresh();
+    syncActivityListHeight();
   })
   .catch((error) => {
     showToast(error.message);
   });
+
+function syncActivityListHeight() {
+  const listSec = document.getElementById("activityListSection");
+  const detail = document.querySelector(".detail-panel");
+  if (!listSec) return;
+  function update() {
+    const h = detail && detail.offsetHeight > 0 ? detail.offsetHeight : window.innerHeight - 100;
+    listSec.style.maxHeight = h + "px";
+  }
+  update();
+  if (detail) new ResizeObserver(update).observe(detail);
+  window.addEventListener("resize", update);
+}
