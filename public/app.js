@@ -633,7 +633,7 @@ function fillActivityForm(activity) {
   elements.activityNameInput.value = source.title || "";
   elements.difficultyInput.value = source.difficulty || "normal";
   elements.typeInput.value = source.type || "普通活动";
-  elements.creatorNameInput.value = toLocalInputValue(source.raidTime) || "";
+  elements.creatorNameInput.value = source.creator?.name || "";
   elements.creatorQqInput.value = source.creator?.qq || "";
   elements.startTimeInput.value = toLocalInputValue(source.startTime);
   elements.endTimeInput.value = toLocalInputValue(source.endTime);
@@ -1598,9 +1598,8 @@ function activityFormPayload() {
     title: elements.activityNameInput.value,
     difficulty: elements.difficultyInput.value,
     type: elements.typeInput.value,
-    raidTime: elements.creatorNameInput.value,
-    creatorName: null,
-    creatorQq: "",
+    creatorName: elements.creatorNameInput.value,
+    creatorQq: elements.creatorQqInput.value,
     startTime: elements.startTimeInput.value,
     endTime: elements.endTimeInput.value,
     status: elements.statusInput.value,
@@ -1993,7 +1992,7 @@ createForm.addEventListener("submit", async (e) => {
   try {
     appState = await api("/api/activities", { method: "POST", body: JSON.stringify({
       activityId: "", title: createTitle.value, difficulty: createDifficulty.value,
-      type: createType.value, raidTime: createCreatorName.value, creatorQq: createCreatorQq.value,
+      type: createType.value, creatorName: createCreatorName.value, creatorQq: createCreatorQq.value,
       startTime: toLocal(now), endTime: toLocal(end), status: "active",
       counts: { tank: 4, healer: 5, boss: 0, dps: 16 },
       expectedConfigRevision: appState?.activity?.configRevision || 1,
