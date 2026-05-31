@@ -19,6 +19,12 @@
             <p id="brandSubtitle">剑网3 · 副本活动报名</p>
           </div>
         </div>
+        <nav class="top-nav" aria-label="主导航">
+          <button id="navFengshenBtn" type="button">封神榜</button>
+          <button id="navSignupBtn" type="button">当前报名</button>
+          <button id="navAdminBtn" type="button">掌柜后台</button>
+          <button id="navArchiveBtn" type="button">活动归档</button>
+        </nav>
         <div class="user-area">
           <div id="userBadge" class="user-badge" hidden></div>
           <button id="logoutBtn" class="ghost-button" type="button" hidden>登出</button>
@@ -45,11 +51,51 @@
           </form>
         </section>
 
-        <section id="homeActions" class="home-actions" aria-label="快捷入口">
-          <button id="showFengshenBtn" class="fengshen-entry" type="button">
-            <span class="fengshen-main">封神榜</span>
-            <span class="fengshen-sub">查看当前赛季爆装备记录</span>
-          </button>
+        <section id="homeActions" class="home-actions" aria-label="指挥中心">
+          <div class="command-actions">
+            <button id="showFengshenBtn" class="fengshen-entry" type="button">
+              <span class="fengshen-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </span>
+              <span>
+                <span class="fengshen-main">封神榜</span>
+                <span class="fengshen-sub">当前赛季爆装备记录</span>
+              </span>
+            </button>
+            <button id="commandSignupBtn" class="command-tile" type="button">
+              <span class="command-tile-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M8.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM3 20a5.5 5.5 0 0 1 11 0M16 8.5a3 3 0 1 1 3.5 4.5M15.5 16.5A5 5 0 0 1 21 20" />
+                </svg>
+              </span>
+              <span>当前报名</span>
+            </button>
+            <button id="commandRestoreBtn" class="command-tile" type="button" hidden>
+              <span class="command-tile-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M5 9H3V3h6M4 14a8 8 0 1 0 2.35-5.65L3 12" />
+                </svg>
+              </span>
+              <span>恢复结束活动</span>
+            </button>
+            <button id="commandRefreshBtn" class="command-tile" type="button">
+              <span class="command-tile-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M20 11a8 8 0 0 0-14.35-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.35 4.9L20 16M20 20v-4h-4" />
+                </svg>
+              </span>
+              <span>刷新列表</span>
+            </button>
+          </div>
+          <div class="command-main">
+            <div class="command-copy">
+              <h2>当前活动概览</h2>
+              <p id="commandSubtitle">下一场团本，一眼定员。</p>
+            </div>
+            <div id="commandMetrics" class="command-metrics" aria-label="报名概览"></div>
+          </div>
         </section>
 
         <section id="fengshenPanel" class="fengshen-panel" aria-label="封神榜" hidden>
@@ -88,6 +134,7 @@
           </div>
 
           <div class="admin-layout">
+            <div id="adminActivityPicker" class="admin-activity-picker" aria-label="后台活动选择"></div>
             <form id="activityForm" class="admin-form">
               <input id="activityIdInput" type="hidden" />
               <div class="form-title-row">
@@ -246,16 +293,16 @@
         </div>
 
         <section id="activityArchiveSection" class="activity-archive-section" aria-label="活动归档" hidden>
-          <details id="activityArchiveDetails" class="archive-details">
-            <summary class="archive-summary">
+          <div id="activityArchiveDetails" class="archive-details">
+            <div class="archive-summary">
               <span class="archive-heading">
                 <strong>活动归档</strong>
                 <span id="archiveSummaryText">已结束活动会收进这里，保留关键信息。</span>
               </span>
               <span id="archiveCount" class="archive-count">0 个已归档</span>
-            </summary>
+            </div>
             <div id="activityArchiveList" class="archive-list"></div>
-          </details>
+          </div>
         </section>
       </main>
     </div>

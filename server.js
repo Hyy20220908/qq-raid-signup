@@ -57,7 +57,8 @@ const PASSWORD_HASH_ITERATIONS = 210_000;
 const MAX_JSON_BODY_BYTES = 6 * 1024 * 1024;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const BOOT_ID = crypto.randomBytes(8).toString("hex");
-const ASSET_VERSION = encodeURIComponent(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || BOOT_ID);
+const DEPLOY_ASSET_VERSION = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || "";
+const STATIC_ASSET_FILES = ["index.html", "styles.css", "app.js"];
 const SLOW_API_MS = Number(process.env.SLOW_API_MS || 1000);
 const ALLOW_EPHEMERAL_STORAGE = process.env.ALLOW_EPHEMERAL_STORAGE === "true";
 
@@ -1232,6 +1233,21 @@ function staticEtag(stat) {
   return `"static-${stat.size}-${Math.floor(stat.mtimeMs)}"`;
 }
 
+function currentAssetVersion() {
+  if (DEPLOY_ASSET_VERSION) {
+    return encodeURIComponent(DEPLOY_ASSET_VERSION);
+  }
+  const assetStamp = STATIC_ASSET_FILES.map((fileName) => {
+    try {
+      const stat = fs.statSync(path.join(PUBLIC_DIR, fileName));
+      return `${stat.size}-${Math.floor(stat.mtimeMs)}`;
+    } catch {
+      return "missing";
+    }
+  }).join(".");
+  return encodeURIComponent(`${BOOT_ID}.${assetStamp}`);
+}
+
 function sendFile(req, res, filePath, cacheControl) {
   fs.stat(filePath, (statError, stat) => {
     if (statError || !stat.isFile()) {
@@ -1273,7 +1289,8 @@ function sendIndexHtml(req, res, filePath) {
       return;
     }
 
-    const etag = `"index-${ASSET_VERSION}-${stat.size}-${Math.floor(stat.mtimeMs)}"`;
+    const assetVersion = currentAssetVersion();
+    const etag = `"index-${assetVersion}-${stat.size}-${Math.floor(stat.mtimeMs)}"`;
     const headers = {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-cache",
@@ -1293,7 +1310,7 @@ function sendIndexHtml(req, res, filePath) {
         res.end("Not found");
         return;
       }
-      sendBody(req, res, 200, headers, content.replaceAll("__ASSET_VERSION__", ASSET_VERSION));
+      sendBody(req, res, 200, headers, content.replaceAll("__ASSET_VERSION__", assetVersion));
     });
   });
 }

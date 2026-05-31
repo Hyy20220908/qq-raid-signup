@@ -27,7 +27,10 @@ let auditLoadedOnce = false;
 let isCreatingActivity = false;
 let adminPanelVisible = localStorage.getItem("adminPanelVisible") === "true";
 let settingsFormDirty = false;
-let activeView = localStorage.getItem("activeView") === "fengshen" ? "fengshen" : "signup";
+const allowedViews = new Set(["signup", "fengshen", "admin", "archive"]);
+let activeView = allowedViews.has(localStorage.getItem("activeView"))
+  ? localStorage.getItem("activeView")
+  : "signup";
 
 const MIN_REFRESH_DELAY = 10000;
 const MAX_REFRESH_DELAY = 60000;
@@ -37,11 +40,20 @@ const elements = {
   userBadge: document.querySelector("#userBadge"),
   logoutBtn: document.querySelector("#logoutBtn"),
   adminToggleBtn: document.querySelector("#adminToggleBtn"),
+  navSignupBtn: document.querySelector("#navSignupBtn"),
+  navFengshenBtn: document.querySelector("#navFengshenBtn"),
+  navAdminBtn: document.querySelector("#navAdminBtn"),
+  navArchiveBtn: document.querySelector("#navArchiveBtn"),
   loginPanel: document.querySelector("#loginPanel"),
   loginForm: document.querySelector("#loginForm"),
   qqInput: document.querySelector("#qqInput"),
   displayNameInput: document.querySelector("#displayNameInput"),
   homeActions: document.querySelector("#homeActions"),
+  commandSubtitle: document.querySelector("#commandSubtitle"),
+  commandMetrics: document.querySelector("#commandMetrics"),
+  commandSignupBtn: document.querySelector("#commandSignupBtn"),
+  commandRestoreBtn: document.querySelector("#commandRestoreBtn"),
+  commandRefreshBtn: document.querySelector("#commandRefreshBtn"),
   showFengshenBtn: document.querySelector("#showFengshenBtn"),
   fengshenPanel: document.querySelector("#fengshenPanel"),
   fengshenSeasonLabel: document.querySelector("#fengshenSeasonLabel"),
@@ -52,7 +64,6 @@ const elements = {
   activityCards: document.querySelector("#activityCards"),
   emptyActivities: document.querySelector("#emptyActivities"),
   activityArchiveSection: document.querySelector("#activityArchiveSection"),
-  activityArchiveDetails: document.querySelector("#activityArchiveDetails"),
   activityArchiveList: document.querySelector("#activityArchiveList"),
   archiveSummaryText: document.querySelector("#archiveSummaryText"),
   archiveCount: document.querySelector("#archiveCount"),
@@ -64,6 +75,7 @@ const elements = {
   activityMeta: document.querySelector("#activityMeta"),
   summaryStats: document.querySelector("#summaryStats"),
   adminPanel: document.querySelector("#adminPanel"),
+  adminActivityPicker: document.querySelector("#adminActivityPicker"),
   activityForm: document.querySelector("#activityForm"),
   activityFormTitle: document.querySelector("#activityFormTitle"),
   activityIdInput: document.querySelector("#activityIdInput"),
@@ -357,26 +369,54 @@ function isOwnDraft(draft) {
   return Boolean(currentUser && draft && draft.qq === currentUser.qq);
 }
 
-function isFengshenView() {
-  return activeView === "fengshen";
-}
-
 function setView(nextView) {
-  activeView = nextView === "fengshen" ? "fengshen" : "signup";
+  activeView = allowedViews.has(nextView) ? nextView : "signup";
   localStorage.setItem("activeView", activeView);
   renderAll({ preserveAdminForm: true, skipAudit: true, forceLootRender: true });
 }
 
 function renderViewChrome() {
-  const fengshen = isFengshenView();
-  elements.homeActions.hidden = fengshen;
+  if (activeView === "admin" && !appState?.isAdmin) {
+    activeView = "signup";
+    localStorage.setItem("activeView", activeView);
+  }
+  document.documentElement.dataset.view = activeView;
+
+  const signup = activeView === "signup";
+  const fengshen = activeView === "fengshen";
+  const admin = activeView === "admin" && Boolean(appState?.isAdmin);
+  const archive = activeView === "archive";
+  const hasSignupDetail = signup && Boolean(appState?.activity) && !isEndedActivity(appState.activity);
+
+  elements.homeActions.hidden = !signup;
   elements.fengshenPanel.hidden = !fengshen;
-  elements.activityListSection.hidden = fengshen;
-  elements.activityArchiveSection.hidden = fengshen || archivedActivities().length === 0;
-  if (fengshen) {
+  elements.activityListSection.hidden = !signup;
+  elements.detailPanel.hidden = !hasSignupDetail;
+  elements.adminPanel.hidden = !admin;
+  elements.activityArchiveSection.hidden = !archive;
+
+  elements.navSignupBtn?.classList.toggle("active", signup);
+  elements.navFengshenBtn?.classList.toggle("active", fengshen);
+  elements.navAdminBtn?.classList.toggle("active", admin);
+  elements.navArchiveBtn?.classList.toggle("active", archive);
+
+  const navPairs = [
+    [elements.navSignupBtn, signup],
+    [elements.navFengshenBtn, fengshen],
+    [elements.navAdminBtn, admin],
+    [elements.navArchiveBtn, archive]
+  ];
+  for (const [button, selected] of navPairs) {
+    if (!button) continue;
+    if (selected) {
+      button.setAttribute("aria-current", "page");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  }
+
+  if (!signup) {
     elements.loginPanel.hidden = true;
-    elements.adminPanel.hidden = true;
-    elements.detailPanel.hidden = true;
   }
 }
 
@@ -399,6 +439,43 @@ function renderUser() {
       ? "选择空位填写报名信息；已提交的自己报名可以继续修改。"
       : "登录后选择空位填写报名信息。";
   }
+}
+
+function renderCommandCenter() {
+  if (!appState) {
+    return;
+  }
+  const activity = !isEndedActivity(appState.activity) ? appState.activity : activeActivities()[0];
+  const activeCount = activeActivities().length;
+  const archivedCount = archivedActivities().length;
+  const lootCount = (appState.seasonLootRecords || appState.lootRecords || []).length;
+  const signed = activity?.signed ?? 0;
+  const total = activity?.total ?? 25;
+  if (elements.commandRestoreBtn) {
+    elements.commandRestoreBtn.hidden = !appState.isAdmin;
+  }
+
+  elements.commandSubtitle.textContent = activity
+    ? `${activity.title} · ${formatTimeRange(activity)}`
+    : archivedCount
+      ? "当前没有进行中的活动，历史活动已归档。"
+      : "等待管理员创建新的团本活动。";
+
+  const metrics = [
+    { value: activeCount, label: "进行中" },
+    { value: `${signed}/${total}`, label: "当前已报名" },
+    { value: lootCount, label: "封神榜记录" },
+    { value: archivedCount, label: "已归档" }
+  ];
+
+  elements.commandMetrics.innerHTML = metrics
+    .map((item) => `
+      <div class="command-metric">
+        <strong>${escapeHtml(item.value)}</strong>
+        <span>${escapeHtml(item.label)}</span>
+      </div>
+    `)
+    .join("");
 }
 
 function renderActivityCards() {
@@ -442,12 +519,64 @@ function renderActivityCards() {
   }
 }
 
+function renderAdminActivityPicker() {
+  if (!elements.adminActivityPicker) {
+    return;
+  }
+
+  if (!appState?.isAdmin) {
+    elements.adminActivityPicker.innerHTML = "";
+    return;
+  }
+
+  const activities = activeActivities();
+  const selected = activities.find((activity) => activity.id === selectedActivityId);
+  const selectedLabel = isCreatingActivity
+    ? "正在创建新活动"
+    : selected
+      ? `当前编辑：${selected.title}`
+      : "请选择一个活动";
+
+  elements.adminActivityPicker.innerHTML = `
+    <div class="admin-picker-head">
+      <div>
+        <h3>活动工作台</h3>
+        <p>${escapeHtml(selectedLabel)}</p>
+      </div>
+      <span>${activities.length} 个进行中活动</span>
+    </div>
+    ${
+      activities.length
+        ? `<div class="admin-activity-list">
+            ${activities
+              .map((activity) => {
+                const isSelected = !isCreatingActivity && activity.id === selectedActivityId;
+                return `
+                  <button class="admin-activity-card ${isSelected ? "selected" : ""}" type="button" data-admin-activity-id="${escapeHtml(activity.id)}" ${isSelected ? 'aria-current="true"' : ""}>
+                    <span class="admin-activity-title">${escapeHtml(activity.title)}</span>
+                    <span class="admin-activity-meta">${escapeHtml(activity.difficultyLabel)} · ${escapeHtml(formatTimeRange(activity))}</span>
+                    <span class="admin-activity-count">${activity.signed}/${activity.total} 已报名</span>
+                  </button>
+                `;
+              })
+              .join("")}
+          </div>`
+        : `<div class="empty-state compact">暂无进行中的活动，可以先创建一个新活动。</div>`
+    }
+  `;
+
+  for (const button of elements.adminActivityPicker.querySelectorAll("[data-admin-activity-id]")) {
+    button.addEventListener("click", () => selectActivity(button.dataset.adminActivityId));
+  }
+}
+
 function renderArchivedActivities() {
   const activities = archivedActivities();
   const isAdmin = Boolean(appState?.isAdmin);
   if (!activities.length) {
-    elements.activityArchiveSection.hidden = true;
-    elements.activityArchiveList.innerHTML = "";
+    elements.archiveCount.textContent = "0 个已归档";
+    elements.archiveSummaryText.textContent = "已结束活动会收进这里，报名区保持清爽，封神榜记录仍会保留。";
+    elements.activityArchiveList.innerHTML = `<div class="empty-state compact">暂无归档活动。活动结束后会自动出现在这里。</div>`;
     return;
   }
 
@@ -540,8 +669,7 @@ function fillActivityForm(activity) {
 }
 
 function renderAdminPanel(options = {}) {
-  // 用户手动隐藏/显示优先于自动刷新
-  elements.adminPanel.hidden = !appState.isAdmin || !adminPanelVisible;
+  elements.adminPanel.hidden = !appState.isAdmin || activeView !== "admin";
   if (!appState.isAdmin) {
     auditLoadedOnce = false;
     isCreatingActivity = false;
@@ -1109,7 +1237,9 @@ function renderAll(options = {}) {
   renderUser();
   renderBrand();
   applyBackground();
+  renderCommandCenter();
   renderActivityCards();
+  renderAdminActivityPicker();
   renderArchivedActivities();
   renderSummary();
   renderAdminPanel(options);
@@ -1479,6 +1609,7 @@ async function submitAdminLogin(event) {
     adminPanelVisible = true;
     localStorage.setItem("adminPanelVisible", "true");
     await loadState({ activityId: selectedActivityId });
+    setView("admin");
     showToast("管理员已登录");
   } catch (error) {
     showToast(error.message);
@@ -1690,6 +1821,8 @@ async function logoutAdmin() {
 
   adminPanelVisible = false;
   localStorage.setItem("adminPanelVisible", "false");
+  activeView = "signup";
+  localStorage.setItem("activeView", "signup");
   auditLoadedOnce = false;
   await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
   showToast("后台已退出", "success");
@@ -1796,6 +1929,42 @@ elements.showFengshenBtn.addEventListener("click", () => {
   setView("fengshen");
   elements.fengshenPanel.scrollIntoView({ behavior: "smooth", block: "start" });
 });
+elements.commandSignupBtn?.addEventListener("click", () => {
+  adminPanelVisible = false;
+  localStorage.setItem("adminPanelVisible", "false");
+  setView("signup");
+  elements.activityListSection.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+elements.commandRestoreBtn?.addEventListener("click", restoreSeasonLootRecords);
+elements.commandRefreshBtn?.addEventListener("click", async () => {
+  resetAutoRefreshDelay();
+  await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true, forceLootRender: true });
+  showToast("列表已刷新");
+});
+elements.navSignupBtn?.addEventListener("click", () => {
+  adminPanelVisible = false;
+  localStorage.setItem("adminPanelVisible", "false");
+  setView("signup");
+  elements.activityListSection.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+elements.navFengshenBtn?.addEventListener("click", () => {
+  setView("fengshen");
+  elements.fengshenPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+elements.navAdminBtn?.addEventListener("click", () => {
+  if (appState?.isAdmin) {
+    adminPanelVisible = true;
+    localStorage.setItem("adminPanelVisible", "true");
+    setView("admin");
+    return;
+  }
+  elements.adminDialog.showModal();
+});
+elements.navArchiveBtn?.addEventListener("click", () => {
+  adminPanelVisible = false;
+  localStorage.setItem("adminPanelVisible", "false");
+  setView("archive");
+});
 elements.backFromFengshenBtn.addEventListener("click", () => {
   setView("signup");
   elements.activityListSection.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1811,9 +1980,9 @@ elements.backToListBtn.addEventListener("click", () => {
 });
 elements.adminToggleBtn.addEventListener("click", () => {
   if (appState?.isAdmin) {
-    adminPanelVisible = !adminPanelVisible;
-    localStorage.setItem("adminPanelVisible", adminPanelVisible);
-    elements.adminPanel.hidden = !appState.isAdmin || !adminPanelVisible;
+    adminPanelVisible = true;
+    localStorage.setItem("adminPanelVisible", "true");
+    setView("admin");
   } else {
     elements.adminDialog.showModal();
   }
@@ -1822,6 +1991,7 @@ elements.newActivityBtn.addEventListener("click", () => {
   isCreatingActivity = true;
   fillActivityForm(null);
   renderActivityCards();
+  renderAdminActivityPicker();
   elements.activityForm.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 elements.closeDialogBtn.addEventListener("click", () => elements.signupDialog.close());
