@@ -940,9 +940,7 @@ summary:focus-visible,
 .count-inputs { display: flex; gap: 10px; }
 .count-inputs .form-field { min-width: 80px; }
 .count-inputs .form-field input { width: 68px; text-align: center; }
-.count-card input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,113,227,0.12); outline: none; }
 
-.count-row .count-total { color: var(--ink-soft); font-size: 13px; font-weight: 600; white-space: nowrap; padding-bottom: 6px; }
 #countTotal { color: var(--ink-soft); font-size: 14px; font-weight: 600; white-space: nowrap; align-self: flex-end; padding-bottom: 6px; }
 #countTotal.invalid { color: var(--danger); font-weight: 700; }
 
@@ -970,20 +968,6 @@ summary:focus-visible,
 }
 .audit-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .audit-header h4 { margin: 0; font-size: 16px; font-weight: 700; color: var(--ink); }
-.audit-links { display: flex; gap: 14px; }
-.link-button {
-  all: unset;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--accent);
-  cursor: pointer;
-  font-family: inherit;
-  padding: 2px 0;
-}
-.link-button:hover { text-decoration: underline; }
-.link-button + .link-button {
-  margin-left: 0;
-}
 
 .audit-list { display: grid; gap: 6px; max-height: 320px; overflow-y: auto; padding-right: 4px; scrollbar-width: thin; }
 .audit-item { border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 10px 12px; background: rgba(255,255,255,0.76); }
