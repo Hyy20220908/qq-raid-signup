@@ -90,128 +90,164 @@
             <div id="adminActivityPicker" class="admin-activity-picker" aria-label="后台活动选择"></div>
             <form id="activityForm" class="admin-form">
               <input id="activityIdInput" type="hidden" />
-              <div class="form-title-row">
-                <h3 id="activityFormTitle">编辑当前活动</h3>
+              <div class="form-group">
+                <h3 class="form-group-title">活动信息</h3>
+                <div class="form-group-grid">
+                  <label class="form-field full-width">
+                    <span>活动标题</span>
+                    <input id="activityNameInput" maxlength="60" placeholder="例如 周五大战招募" />
+                  </label>
+                  <label class="form-field">
+                    <span>副本难度</span>
+                    <select id="difficultyInput">
+                      <option value="normal">普通</option>
+                      <option value="hero">英雄</option>
+                    </select>
+                  </label>
+                  <label class="form-field">
+                    <span>活动类型</span>
+                    <input id="typeInput" maxlength="40" placeholder="开荒 / farm / 老板团" />
+                  </label>
+                  <label class="form-field">
+                    <span>创建者</span>
+                    <input id="creatorNameInput" maxlength="24" placeholder="团长昵称" />
+                  </label>
+                  <label class="form-field">
+                    <span>创建者 QQ</span>
+                    <input id="creatorQqInput" inputmode="numeric" maxlength="12" placeholder="可选" />
+                  </label>
+                  <label class="form-field">
+                    <span>活动状态</span>
+                    <select id="statusInput">
+                      <option value="active">进行中</option>
+                      <option value="ended">结束</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div class="form-group">
+                <h3 class="form-group-title">活动时间</h3>
+                <div class="form-group-grid">
+                  <label class="form-field">
+                    <span>开始时间</span>
+                    <input id="startTimeInput" type="datetime-local" />
+                  </label>
+                  <label class="form-field">
+                    <span>结束时间</span>
+                    <input id="endTimeInput" type="datetime-local" />
+                  </label>
+                </div>
+              </div>
+              <div class="form-group">
+                <h3 class="form-group-title">团队编制</h3>
+                <div class="roster-config">
+                  <div class="roster-tile">
+                    <span class="roster-dot tank"></span>
+                    <input id="tankCountInput" class="roster-input" type="number" min="0" max="25" value="4" />
+                    <span class="roster-name">T 位</span>
+                  </div>
+                  <div class="roster-tile">
+                    <span class="roster-dot healer"></span>
+                    <input id="healerCountInput" class="roster-input" type="number" min="0" max="25" value="5" />
+                    <span class="roster-name">奶位</span>
+                  </div>
+                  <div class="roster-tile">
+                    <span class="roster-dot dps"></span>
+                    <input id="dpsCountInput" class="roster-input" type="number" min="0" max="25" value="16" />
+                    <span class="roster-name">输出位</span>
+                  </div>
+                  <span id="countTotal" class="roster-total">合计 25 / 25</span>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button id="activitySubmitBtn" class="primary-button" type="submit" disabled>保存修改</button>
+                <div class="form-actions-spacer"></div>
                 <button id="newActivityBtn" class="ghost-button" type="button">新建活动</button>
-              </div>
-              <label>
-                <span>活动标题</span>
-                <input id="activityNameInput" maxlength="60" placeholder="例如 周五大战招募" />
-              </label>
-              <label>
-                <span>副本难度</span>
-                <select id="difficultyInput">
-                  <option value="normal">普通</option>
-                  <option value="hero">英雄</option>
-                </select>
-              </label>
-              <label>
-                <span>活动类型</span>
-                <input id="typeInput" maxlength="40" placeholder="例如 开荒 / farm / 老板团" />
-              </label>
-              <label>
-                <span>创建者</span>
-                <input id="creatorNameInput" maxlength="24" placeholder="例如 团长昵称" />
-              </label>
-              <label>
-                <span>创建者 QQ</span>
-                <input id="creatorQqInput" inputmode="numeric" maxlength="12" placeholder="可选" />
-              </label>
-              <label>
-                <span>活动时间</span>
-                <input id="startTimeInput" type="datetime-local" />
-              </label>
-              <label>
-                <span>结束时间</span>
-                <input id="endTimeInput" type="datetime-local" />
-              </label>
-              <label>
-                <span>活动状态</span>
-                <select id="statusInput">
-                  <option value="active">进行中</option>
-                  <option value="ended">结束</option>
-                </select>
-              </label>
-              <div class="count-grid">
-                <label>
-                  <span>T 位</span>
-                  <input id="tankCountInput" type="number" min="0" max="25" value="4" />
-                </label>
-                <label>
-                  <span>奶位</span>
-                  <input id="healerCountInput" type="number" min="0" max="25" value="5" />
-                </label>
-                <label>
-                  <span>输出位</span>
-                  <input id="dpsCountInput" type="number" min="0" max="25" value="16" />
-                </label>
-              </div>
-              <div class="form-footer">
-                <span id="countTotal">合计 25 / 25</span>
-                <button id="activitySubmitBtn" class="primary-button" type="submit">保存活动</button>
+                <div class="more-menu-wrapper">
+                  <button id="moreMenuBtn" class="ghost-button more-button" type="button" aria-label="更多操作">⋯</button>
+                  <div id="moreMenu" class="more-menu" hidden>
+                    <button id="deleteActivityBtn" class="danger-button menu-item" type="button">删除活动</button>
+                  </div>
+                </div>
               </div>
             </form>
 
-            <div class="admin-tools">
-              <div class="tool-row">
-                <button id="refreshAuditBtn" class="ghost-button" type="button">刷新记录</button>
-                <button id="clearAuditBtn" class="ghost-button" type="button">清理填写记录</button>
-                <button id="clearActivityBtn" class="ghost-button" type="button">清空报名</button>
-                <button id="adminLogoutBtn" class="ghost-button" type="button">退出后台</button>
-                <button id="deleteActivityBtn" class="danger-button" type="button">删除当前活动</button>
-              </div>
-              <div class="audit-list" id="auditList" aria-live="polite"></div>
-              <details class="settings-panel">
-                <summary class="settings-summary">自定义品牌</summary>
-                <div class="settings-form">
-                  <div class="setting-section">
-                    <span class="setting-label">Logo 图片</span>
-                    <p class="setting-hint">上传自定义图片，适配 52×52 区域</p>
-                    <div class="logo-upload-row">
-                      <input id="settingsLogoFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" />
-                      <button id="uploadLogoBtn" class="primary-button" type="button">上传</button>
-                    </div>
-                    <div id="logoPreview" class="logo-preview" hidden>
-                      <img id="logoPreviewImg" src="" alt="Logo 预览" />
-                      <button id="removeLogoBtn" class="danger-button" type="button">移除图片</button>
-                    </div>
+            <div class="admin-toolbar">
+              <button id="clearActivityBtn" class="ghost-button" type="button">清空报名</button>
+              <div class="tool-row-spacer"></div>
+              <button id="adminLogoutBtn" class="ghost-button" type="button">退出后台</button>
+            </div>
+
+            <div class="admin-bottom-grid">
+              <div class="audit-section">
+                <div class="audit-header">
+                  <h4>操作记录</h4>
+                  <div class="tool-row compact">
+                    <button id="refreshAuditBtn" class="ghost-button" type="button">刷新</button>
+                    <button id="clearAuditBtn" class="ghost-button" type="button">清理</button>
                   </div>
-                  <label>
-                    <span>品牌标题</span>
-                    <input id="settingsBrandTitle" maxlength="40" placeholder="团本召集令" />
-                  </label>
-                  <label>
-                    <span>副标题</span>
-                    <input id="settingsBrandSubtitle" maxlength="80" placeholder="剑网3 · 副本活动报名" />
-                  </label>
-                  <label>
-                    <span>背景色（十六进制）</span>
-                    <div class="color-row">
-                      <input id="settingsBgColor" maxlength="7" placeholder="#2a211b" />
-                      <span id="bgColorPreview" class="color-preview"></span>
-                    </div>
-                  </label>
-                  <button id="saveSettingsBtn" class="primary-button" type="button">保存设置</button>
                 </div>
-              </details>
-              <details class="settings-panel">
-                <summary class="settings-summary">修改管理员密码</summary>
-                <form id="adminPasswordForm" class="password-form">
-                  <label>
-                    <span>当前密码</span>
-                    <input id="currentAdminPasswordInput" type="password" autocomplete="current-password" required />
-                  </label>
-                  <label>
-                    <span>新密码</span>
-                    <input id="newAdminPasswordInput" type="password" autocomplete="new-password" minlength="6" required />
-                  </label>
-                  <label>
-                    <span>确认新密码</span>
-                    <input id="confirmAdminPasswordInput" type="password" autocomplete="new-password" minlength="6" required />
-                  </label>
-                  <button id="saveAdminPasswordBtn" class="primary-button" type="submit">保存新密码</button>
-                </form>
-              </details>
+                <div class="audit-list" id="auditList" aria-live="polite"></div>
+              </div>
+              <div class="admin-settings">
+                <details class="settings-panel">
+                  <summary class="settings-summary">
+                    <span class="settings-icon">&#9881;</span>
+                    <span>自定义品牌</span>
+                  </summary>
+                  <div class="settings-body">
+                    <div class="setting-section">
+                      <span class="setting-label">Logo 图片</span>
+                      <p class="setting-hint">上传自定义图片，适配 52×52 区域</p>
+                      <div class="logo-upload-row">
+                        <input id="settingsLogoFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" />
+                        <button id="uploadLogoBtn" class="primary-button" type="button">上传</button>
+                      </div>
+                      <div id="logoPreview" class="logo-preview" hidden>
+                        <img id="logoPreviewImg" src="" alt="Logo 预览" />
+                        <button id="removeLogoBtn" class="danger-button" type="button">移除图片</button>
+                      </div>
+                    </div>
+                    <label>
+                      <span>品牌标题</span>
+                      <input id="settingsBrandTitle" maxlength="40" placeholder="团本召集令" />
+                    </label>
+                    <label>
+                      <span>副标题</span>
+                      <input id="settingsBrandSubtitle" maxlength="80" placeholder="剑网3 · 副本活动报名" />
+                    </label>
+                    <label>
+                      <span>背景色（十六进制）</span>
+                      <div class="color-row">
+                        <input id="settingsBgColor" maxlength="7" placeholder="#2a211b" />
+                        <span id="bgColorPreview" class="color-preview"></span>
+                      </div>
+                    </label>
+                    <button id="saveSettingsBtn" class="primary-button" type="button">保存设置</button>
+                  </div>
+                </details>
+                <details class="settings-panel">
+                  <summary class="settings-summary">
+                    <span class="settings-icon">&#128274;</span>
+                    <span>修改管理员密码</span>
+                  </summary>
+                  <form id="adminPasswordForm" class="password-form" action="javascript:void(0)">
+                    <label>
+                      <span>当前密码</span>
+                      <input id="currentAdminPasswordInput" type="password" autocomplete="current-password" required />
+                    </label>
+                    <label>
+                      <span>新密码</span>
+                      <input id="newAdminPasswordInput" type="password" autocomplete="new-password" minlength="6" required />
+                    </label>
+                    <label>
+                      <span>确认新密码</span>
+                      <input id="confirmAdminPasswordInput" type="password" autocomplete="new-password" minlength="6" required />
+                    </label>
+                    <button id="saveAdminPasswordBtn" class="primary-button" type="submit">保存新密码</button>
+                  </form>
+                </details>
+              </div>
             </div>
           </div>
         </section>
@@ -305,6 +341,45 @@
         <div class="dialog-actions">
           <button id="deleteSignupBtn" class="danger-button" type="button" hidden>撤销报名</button>
           <button id="signupSubmitBtn" class="primary-button" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="createActivityDialog" class="dialog small-dialog">
+      <form id="createActivityForm" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <span class="dialog-kicker">团长后台</span>
+            <h2>新建活动</h2>
+          </div>
+          <button id="closeCreateDialogBtn" class="icon-button" value="cancel" type="button" aria-label="关闭">×</button>
+        </div>
+        <label>
+          <span>活动标题</span>
+          <input id="createTitleInput" maxlength="60" placeholder="例如 周五大战招募" required />
+        </label>
+        <label>
+          <span>副本难度</span>
+          <select id="createDifficultyInput">
+            <option value="normal">普通</option>
+            <option value="hero">英雄</option>
+          </select>
+        </label>
+        <label>
+          <span>活动类型</span>
+          <input id="createTypeInput" maxlength="40" placeholder="开荒 / farm / 老板团" />
+        </label>
+        <label>
+          <span>创建者</span>
+          <input id="createCreatorNameInput" maxlength="24" placeholder="团长昵称" required />
+        </label>
+        <label>
+          <span>创建者 QQ</span>
+          <input id="createCreatorQqInput" inputmode="numeric" maxlength="12" placeholder="可选" />
+        </label>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="cancelCreateBtn">取消</button>
+          <button class="primary-button" type="submit">确认创建</button>
         </div>
       </form>
     </dialog>

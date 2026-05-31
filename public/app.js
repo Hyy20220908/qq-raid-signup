@@ -604,6 +604,13 @@ function renderSummary() {
     })();
 }
 
+let adminFormDirty = false;
+
+function setAdminFormDirty(dirty) {
+  adminFormDirty = dirty;
+  elements.activitySubmitBtn.disabled = !dirty;
+}
+
 function fillActivityForm(activity) {
   const source =
     activity || {
@@ -630,9 +637,8 @@ function fillActivityForm(activity) {
   elements.tankCountInput.value = source.counts?.tank ?? 4;
   elements.healerCountInput.value = source.counts?.healer ?? 5;
   elements.dpsCountInput.value = source.counts?.dps ?? 16;
-  elements.activityFormTitle.textContent = source.id ? "编辑当前活动" : "创建新活动";
-  elements.activitySubmitBtn.textContent = source.id ? "保存活动" : "创建活动";
   updateCountTotal();
+  setAdminFormDirty(false);
 }
 
 function renderAdminPanel(options = {}) {
@@ -1937,13 +1943,6 @@ elements.adminToggleBtn.addEventListener("click", () => {
     elements.adminDialog.showModal();
   }
 });
-elements.newActivityBtn.addEventListener("click", () => {
-  isCreatingActivity = true;
-  fillActivityForm(null);
-  renderActivityCards();
-  renderAdminActivityPicker();
-  elements.activityForm.scrollIntoView({ behavior: "smooth", block: "start" });
-});
 elements.closeDialogBtn.addEventListener("click", () => elements.signupDialog.close());
 elements.signupDialog.addEventListener("close", releaseSelectedDraft);
 elements.closeAdminDialogBtn.addEventListener("click", () => elements.adminDialog.close());
@@ -1951,6 +1950,65 @@ elements.signupForm.addEventListener("submit", submitSignup);
 elements.deleteSignupBtn.addEventListener("click", deleteSignup);
 elements.adminLoginForm.addEventListener("submit", submitAdminLogin);
 elements.activityForm.addEventListener("submit", submitActivity);
+
+// 表单脏检测
+for (const field of [
+  elements.activityNameInput, elements.difficultyInput, elements.typeInput,
+  elements.creatorNameInput, elements.creatorQqInput, elements.startTimeInput,
+  elements.endTimeInput, elements.statusInput, elements.tankCountInput,
+  elements.healerCountInput, elements.dpsCountInput
+]) {
+  field.addEventListener("input", () => setAdminFormDirty(true));
+  field.addEventListener("change", () => setAdminFormDirty(true));
+}
+
+// 新建活动弹窗
+const createDialog = document.getElementById("createActivityDialog");
+const createForm = document.getElementById("createActivityForm");
+const createTitle = document.getElementById("createTitleInput");
+const createDifficulty = document.getElementById("createDifficultyInput");
+const createType = document.getElementById("createTypeInput");
+const createCreatorName = document.getElementById("createCreatorNameInput");
+const createCreatorQq = document.getElementById("createCreatorQqInput");
+
+elements.newActivityBtn.addEventListener("click", () => {
+  createTitle.value = ""; createDifficulty.value = "normal";
+  createType.value = ""; createCreatorName.value = ""; createCreatorQq.value = "";
+  createDialog.showModal();
+});
+document.getElementById("cancelCreateBtn").addEventListener("click", () => createDialog.close());
+document.getElementById("closeCreateDialogBtn").addEventListener("click", () => createDialog.close());
+createForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const now = new Date(), end = new Date(now.getTime() + 7200000);
+  const toLocal = (d) => d.toISOString().slice(0, 16);
+  try {
+    appState = await api("/api/activities", { method: "POST", body: JSON.stringify({
+      activityId: "", title: createTitle.value, difficulty: createDifficulty.value,
+      type: createType.value, creatorName: createCreatorName.value, creatorQq: createCreatorQq.value,
+      startTime: toLocal(now), endTime: toLocal(end), status: "active",
+      counts: { tank: 4, healer: 5, boss: 0, dps: 16 },
+      expectedConfigRevision: appState?.activity?.configRevision || 1,
+      expectedRosterRevision: appState?.activity?.rosterRevision || 1
+    })});
+    isCreatingActivity = false; selectedActivityId = appState.selectedActivityId;
+    localStorage.setItem("selectedActivityId", selectedActivityId);
+    auditLoadedOnce = false; createDialog.close(); renderAll();
+    showToast("活动已创建", "success");
+  } catch (error) { showToast(error.message, "error"); }
+});
+
+// ⋯ 更多菜单
+const moreMenuBtn = document.getElementById("moreMenuBtn");
+const moreMenu = document.getElementById("moreMenu");
+moreMenuBtn.addEventListener("click", (e) => { e.stopPropagation(); moreMenu.hidden = !moreMenu.hidden; });
+document.addEventListener("click", (e) => {
+  if (!moreMenu.hidden && !moreMenuBtn.contains(e.target) && !moreMenu.contains(e.target)) {
+    moreMenu.hidden = true;
+  }
+});
+elements.deleteActivityBtn?.addEventListener("click", () => { moreMenu.hidden = true; });
+
 elements.adminPasswordForm.addEventListener("submit", changeAdminPassword);
 elements.refreshAuditBtn.addEventListener("click", loadAudit);
 elements.clearAuditBtn.addEventListener("click", clearAudit);
