@@ -492,11 +492,6 @@ function renderAdminActivityPicker() {
       ? `当前编辑：${selected.title}`
       : "请选择一个活动";
 
-  // 保存滚动位置，防止 innerHTML 重建后重置
-  const listEl = elements.adminActivityPicker.querySelector(".admin-activity-list");
-  const savedScrollLeft = listEl ? listEl.scrollLeft : 0;
-  const prevCardCount = elements.adminActivityPicker.querySelectorAll("[data-admin-activity-id]").length;
-
   elements.adminActivityPicker.innerHTML = `
     <div class="admin-picker-head">
       <div>
@@ -545,10 +540,10 @@ function renderAdminActivityPicker() {
     button.addEventListener("click", () => selectActivity(button.dataset.adminActivityId));
   }
 
-  // 恢复滚动；新增卡片时滑到最前，否则保持原位置
-  const newListEl = elements.adminActivityPicker.querySelector(".admin-activity-list");
-  if (newListEl) {
-    newListEl.scrollLeft = (activities.length > prevCardCount) ? 0 : savedScrollLeft;
+  // 将选中的卡片滚动到可视区域
+  const selectedCard = elements.adminActivityPicker.querySelector('[aria-current="true"]');
+  if (selectedCard) {
+    selectedCard.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "instant" });
   }
 }
 
