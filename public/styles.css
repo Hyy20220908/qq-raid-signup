@@ -396,8 +396,11 @@ main > * {
 .activity-list-section {
   position: sticky;
   top: 84px;
+  align-self: start;
   order: 20;
   grid-column: 1;
+  height: var(--activity-list-height, auto);
+  min-height: 0;
   max-height: calc(100vh - 100px);
   overflow-y: auto;
   overflow-x: hidden;
@@ -581,10 +584,11 @@ summary:focus-visible,
   z-index: 1;
   display: grid;
   grid-template-columns: 1fr;
+  grid-auto-rows: max-content;
   gap: 8px;
   align-content: start;
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
   padding-right: 4px;
 }
 
@@ -1844,6 +1848,7 @@ summary:focus-visible,
   .activity-list-section {
     position: relative;
     top: auto;
+    height: auto;
     min-height: 0;
     max-height: none;
     overflow: visible;

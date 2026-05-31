@@ -1228,6 +1228,7 @@ function renderAll(options = {}) {
   renderBoard();
   renderLootRecords(options);
   renderViewChrome();
+  syncActivityListHeight();
 }
 
 async function loadState(options = {}) {
@@ -2056,21 +2057,39 @@ loadState()
   .then(() => {
     startStateEvents();
     startAutoRefresh();
-    syncActivityListHeight();
+    setupActivityListHeightSync();
   })
   .catch((error) => {
     showToast(error.message);
   });
 
 function syncActivityListHeight() {
-  const listSec = document.getElementById("activityListSection");
-  const detail = document.querySelector(".detail-panel");
-  if (!listSec) return;
-  function update() {
-    const h = detail && detail.offsetHeight > 0 ? detail.offsetHeight : window.innerHeight - 100;
-    listSec.style.maxHeight = h + "px";
+  const listSection = elements.activityListSection;
+  const detail = elements.detailPanel;
+  if (!listSection) {
+    return;
   }
-  update();
-  if (detail) new ResizeObserver(update).observe(detail);
-  window.addEventListener("resize", update);
+
+  listSection.style.removeProperty("max-height");
+  const canSync =
+    activeView === "signup" &&
+    window.matchMedia("(min-width: 981px)").matches &&
+    detail &&
+    !detail.hidden &&
+    detail.offsetHeight > 0;
+
+  if (!canSync) {
+    listSection.style.removeProperty("--activity-list-height");
+    return;
+  }
+
+  listSection.style.setProperty("--activity-list-height", `${Math.ceil(detail.getBoundingClientRect().height)}px`);
+}
+
+function setupActivityListHeightSync() {
+  syncActivityListHeight();
+  if (window.ResizeObserver && elements.detailPanel) {
+    new ResizeObserver(syncActivityListHeight).observe(elements.detailPanel);
+  }
+  window.addEventListener("resize", syncActivityListHeight);
 }
