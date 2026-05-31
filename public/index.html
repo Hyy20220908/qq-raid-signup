@@ -84,6 +84,7 @@
               <h2>团长后台</h2>
               <p>管理活动、调整名册。</p>
             </div>
+            <button id="adminLogoutBtn" class="ghost-button" type="button">退出后台</button>
           </div>
 
           <div class="admin-layout">
@@ -109,19 +110,19 @@
                     <input id="typeInput" maxlength="40" placeholder="开荒 / farm / 老板团" />
                   </label>
                   <label class="form-field">
+                    <span>活动状态</span>
+                    <select id="statusInput">
+                      <option value="active">进行中</option>
+                      <option value="ended">结束</option>
+                    </select>
+                  </label>
+                  <label class="form-field">
                     <span>创建者</span>
                     <input id="creatorNameInput" maxlength="24" placeholder="团长昵称" />
                   </label>
                   <label class="form-field">
                     <span>创建者 QQ</span>
                     <input id="creatorQqInput" inputmode="numeric" maxlength="12" placeholder="可选" />
-                  </label>
-                  <label class="form-field">
-                    <span>活动状态</span>
-                    <select id="statusInput">
-                      <option value="active">进行中</option>
-                      <option value="ended">结束</option>
-                    </select>
                   </label>
                 </div>
               </div>
@@ -161,22 +162,9 @@
               </div>
               <div class="form-actions">
                 <button id="activitySubmitBtn" class="primary-button" type="submit" disabled>保存修改</button>
-                <div class="form-actions-spacer"></div>
-                <button id="newActivityBtn" class="ghost-button" type="button">新建活动</button>
-                <div class="more-menu-wrapper">
-                  <button id="moreMenuBtn" class="ghost-button more-button" type="button" aria-label="更多操作">⋯</button>
-                  <div id="moreMenu" class="more-menu" hidden>
-                    <button id="deleteActivityBtn" class="danger-button menu-item" type="button">删除活动</button>
-                  </div>
-                </div>
+                <button id="clearActivityBtn" class="ghost-button" type="button">清空报名</button>
               </div>
             </form>
-
-            <div class="admin-toolbar">
-              <button id="clearActivityBtn" class="ghost-button" type="button">清空报名</button>
-              <div class="tool-row-spacer"></div>
-              <button id="adminLogoutBtn" class="ghost-button" type="button">退出后台</button>
-            </div>
 
             <div class="admin-bottom-grid">
               <div class="audit-section">

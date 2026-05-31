@@ -498,7 +498,11 @@ function renderAdminActivityPicker() {
         <h3>活动工作台</h3>
         <p>${escapeHtml(selectedLabel)}</p>
       </div>
-      <span>${activities.length} 个进行中活动</span>
+      <div class="admin-picker-actions">
+        <span>${activities.length} 个进行中活动</span>
+        <button class="danger-outline-button" id="deleteActivityBtn" type="button">删除活动</button>
+        <button class="primary-button" id="newActivityBtn" type="button">新建活动</button>
+      </div>
     </div>
     ${
       activities.length
@@ -1971,10 +1975,13 @@ const createType = document.getElementById("createTypeInput");
 const createCreatorName = document.getElementById("createCreatorNameInput");
 const createCreatorQq = document.getElementById("createCreatorQqInput");
 
-elements.newActivityBtn.addEventListener("click", () => {
-  createTitle.value = ""; createDifficulty.value = "normal";
-  createType.value = ""; createCreatorName.value = ""; createCreatorQq.value = "";
-  createDialog.showModal();
+// 新建活动弹窗（委托：按钮在活动工作台内动态渲染）
+elements.adminActivityPicker.addEventListener("click", (e) => {
+  if (e.target.id === "newActivityBtn" || e.target.closest("#newActivityBtn")) {
+    createTitle.value = ""; createDifficulty.value = "normal";
+    createType.value = ""; createCreatorName.value = ""; createCreatorQq.value = "";
+    createDialog.showModal();
+  }
 });
 document.getElementById("cancelCreateBtn").addEventListener("click", () => createDialog.close());
 document.getElementById("closeCreateDialogBtn").addEventListener("click", () => createDialog.close());
@@ -1998,23 +2005,17 @@ createForm.addEventListener("submit", async (e) => {
   } catch (error) { showToast(error.message, "error"); }
 });
 
-// ⋯ 更多菜单
-const moreMenuBtn = document.getElementById("moreMenuBtn");
-const moreMenu = document.getElementById("moreMenu");
-moreMenuBtn.addEventListener("click", (e) => { e.stopPropagation(); moreMenu.hidden = !moreMenu.hidden; });
-document.addEventListener("click", (e) => {
-  if (!moreMenu.hidden && !moreMenuBtn.contains(e.target) && !moreMenu.contains(e.target)) {
-    moreMenu.hidden = true;
-  }
-});
-elements.deleteActivityBtn?.addEventListener("click", () => { moreMenu.hidden = true; });
-
 elements.adminPasswordForm.addEventListener("submit", changeAdminPassword);
 elements.refreshAuditBtn.addEventListener("click", loadAudit);
 elements.clearAuditBtn.addEventListener("click", clearAudit);
 elements.clearActivityBtn.addEventListener("click", clearActivitySignups);
 elements.adminLogoutBtn.addEventListener("click", logoutAdmin);
-elements.deleteActivityBtn.addEventListener("click", deleteActivity);
+// 删除活动（委托，按钮在活动工作台内动态渲染）
+elements.adminActivityPicker.addEventListener("click", (e) => {
+  if (e.target.id === "deleteActivityBtn" || e.target.closest("#deleteActivityBtn")) {
+    deleteActivity(new Event("click"));
+  }
+});
 elements.saveSettingsBtn.addEventListener("click", saveSettings);
 elements.uploadLogoBtn.addEventListener("click", uploadLogo);
 elements.removeLogoBtn.addEventListener("click", removeLogo);
