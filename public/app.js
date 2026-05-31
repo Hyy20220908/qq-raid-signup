@@ -506,7 +506,7 @@ function renderAdminActivityPicker() {
     </div>
     ${
       activities.length
-        ? `<div class="admin-activity-list vertical">
+        ? `<div class="admin-activity-list">
             ${activities
               .map((activity) => {
                 const isSelected = !isCreatingActivity && activity.id === selectedActivityId;
@@ -543,7 +543,7 @@ function renderAdminActivityPicker() {
   // 将选中的卡片滚动到可视区域
   const selectedCard = elements.adminActivityPicker.querySelector('[aria-current="true"]');
   if (selectedCard) {
-    selectedCard.scrollIntoView({ block: "nearest", behavior: "instant" });
+    selectedCard.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "instant" });
   }
 }
 

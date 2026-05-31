@@ -902,16 +902,6 @@ summary:focus-visible,
 .admin-activity-list .activity-card { flex: 0 0 270px; }
 .admin-activity-list .activity-card .detail-button { display: none; }
 
-.admin-activity-list.vertical {
-  flex-direction: column;
-  overflow-x: hidden;
-  overflow-y: auto;
-  max-height: 360px;
-  padding-right: 4px;
-  gap: 8px;
-}
-.admin-activity-list.vertical .activity-card { flex: none; }
-
 /* Admin Form */
 .admin-form {
   border: 1px solid var(--line-soft); border-radius: var(--radius);
