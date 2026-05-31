@@ -495,6 +495,7 @@ function renderAdminActivityPicker() {
   // 保存滚动位置，防止 innerHTML 重建后重置
   const listEl = elements.adminActivityPicker.querySelector(".admin-activity-list");
   const savedScrollLeft = listEl ? listEl.scrollLeft : 0;
+  const prevCardCount = elements.adminActivityPicker.querySelectorAll("[data-admin-activity-id]").length;
 
   elements.adminActivityPicker.innerHTML = `
     <div class="admin-picker-head">
@@ -544,9 +545,11 @@ function renderAdminActivityPicker() {
     button.addEventListener("click", () => selectActivity(button.dataset.adminActivityId));
   }
 
-  // 恢复滚动位置
+  // 恢复滚动；新增卡片时滑到最前，否则保持原位置
   const newListEl = elements.adminActivityPicker.querySelector(".admin-activity-list");
-  if (newListEl) newListEl.scrollLeft = savedScrollLeft;
+  if (newListEl) {
+    newListEl.scrollLeft = (activities.length > prevCardCount) ? 0 : savedScrollLeft;
+  }
 }
 
 function renderArchivedActivities() {
