@@ -48,13 +48,6 @@ const elements = {
   loginForm: document.querySelector("#loginForm"),
   qqInput: document.querySelector("#qqInput"),
   displayNameInput: document.querySelector("#displayNameInput"),
-  homeActions: document.querySelector("#homeActions"),
-  commandSubtitle: document.querySelector("#commandSubtitle"),
-  commandMetrics: document.querySelector("#commandMetrics"),
-  commandSignupBtn: document.querySelector("#commandSignupBtn"),
-  commandRestoreBtn: document.querySelector("#commandRestoreBtn"),
-  commandRefreshBtn: document.querySelector("#commandRefreshBtn"),
-  showFengshenBtn: document.querySelector("#showFengshenBtn"),
   fengshenPanel: document.querySelector("#fengshenPanel"),
   fengshenSeasonLabel: document.querySelector("#fengshenSeasonLabel"),
   backFromFengshenBtn: document.querySelector("#backFromFengshenBtn"),
@@ -388,7 +381,6 @@ function renderViewChrome() {
   const archive = activeView === "archive";
   const hasSignupDetail = signup && Boolean(appState?.activity) && !isEndedActivity(appState.activity);
 
-  elements.homeActions.hidden = !signup;
   elements.fengshenPanel.hidden = !fengshen;
   elements.activityListSection.hidden = !signup;
   elements.detailPanel.hidden = !hasSignupDetail;
@@ -439,43 +431,6 @@ function renderUser() {
       ? "选择空位填写报名信息；已提交的自己报名可以继续修改。"
       : "登录后选择空位填写报名信息。";
   }
-}
-
-function renderCommandCenter() {
-  if (!appState) {
-    return;
-  }
-  const activity = !isEndedActivity(appState.activity) ? appState.activity : activeActivities()[0];
-  const activeCount = activeActivities().length;
-  const archivedCount = archivedActivities().length;
-  const lootCount = (appState.seasonLootRecords || appState.lootRecords || []).length;
-  const signed = activity?.signed ?? 0;
-  const total = activity?.total ?? 25;
-  if (elements.commandRestoreBtn) {
-    elements.commandRestoreBtn.hidden = !appState.isAdmin;
-  }
-
-  elements.commandSubtitle.textContent = activity
-    ? `${activity.title} · ${formatTimeRange(activity)}`
-    : archivedCount
-      ? "当前没有进行中的活动，历史活动已归档。"
-      : "等待管理员创建新的团本活动。";
-
-  const metrics = [
-    { value: activeCount, label: "进行中" },
-    { value: `${signed}/${total}`, label: "当前已报名" },
-    { value: lootCount, label: "封神榜记录" },
-    { value: archivedCount, label: "已归档" }
-  ];
-
-  elements.commandMetrics.innerHTML = metrics
-    .map((item) => `
-      <div class="command-metric">
-        <strong>${escapeHtml(item.value)}</strong>
-        <span>${escapeHtml(item.label)}</span>
-      </div>
-    `)
-    .join("");
 }
 
 function renderActivityCards() {
@@ -1237,7 +1192,6 @@ function renderAll(options = {}) {
   renderUser();
   renderBrand();
   applyBackground();
-  renderCommandCenter();
   renderActivityCards();
   renderAdminActivityPicker();
   renderArchivedActivities();
@@ -1924,22 +1878,6 @@ elements.refreshBtn.addEventListener("click", async () => {
   resetAutoRefreshDelay();
   await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true });
   showToast("名册已刷新");
-});
-elements.showFengshenBtn.addEventListener("click", () => {
-  setView("fengshen");
-  elements.fengshenPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-});
-elements.commandSignupBtn?.addEventListener("click", () => {
-  adminPanelVisible = false;
-  localStorage.setItem("adminPanelVisible", "false");
-  setView("signup");
-  elements.activityListSection.scrollIntoView({ behavior: "smooth", block: "start" });
-});
-elements.commandRestoreBtn?.addEventListener("click", restoreSeasonLootRecords);
-elements.commandRefreshBtn?.addEventListener("click", async () => {
-  resetAutoRefreshDelay();
-  await loadState({ activityId: selectedActivityId, preserveAdminForm: true, skipAudit: true, forceLootRender: true });
-  showToast("列表已刷新");
 });
 elements.navSignupBtn?.addEventListener("click", () => {
   adminPanelVisible = false;
