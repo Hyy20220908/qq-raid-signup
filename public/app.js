@@ -500,7 +500,7 @@ function renderAdminActivityPicker() {
       </div>
       <div class="admin-picker-actions">
         <span>${activities.length} 个进行中活动</span>
-        <button class="danger-outline-button" id="deleteActivityBtn" type="button">删除活动</button>
+        <button class="danger-outline-button" id="deleteActivityBtn" type="button">删除当前活动</button>
         <button class="primary-button" id="newActivityBtn" type="button">新建活动</button>
       </div>
     </div>
@@ -642,6 +642,7 @@ function fillActivityForm(activity) {
   elements.healerCountInput.value = source.counts?.healer ?? 5;
   elements.dpsCountInput.value = source.counts?.dps ?? 16;
   updateCountTotal();
+  if (elements.activityFormTitle) elements.activityFormTitle.textContent = source.id ? "编辑活动" : "创建新活动";
   setAdminFormDirty(false);
 }
 
