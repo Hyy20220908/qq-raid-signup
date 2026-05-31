@@ -396,26 +396,13 @@ main > * {
 .activity-list-section {
   position: sticky;
   top: 84px;
-  display: flex;
-  flex-direction: column;
   order: 20;
   grid-column: 1;
   max-height: calc(100vh - 100px);
-  min-height: 0;
-}
-
-.activity-list-section .activity-grid {
-  flex: 0 1 auto;
   overflow-y: auto;
-  min-height: 0;
-  padding-right: 4px;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
-}
-
-.activity-grid-spacer {
-  flex: 1;
-  min-height: 0;
 }
 
 .activity-grid::-webkit-scrollbar,
