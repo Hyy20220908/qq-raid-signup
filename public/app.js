@@ -1972,14 +1972,14 @@ const createForm = document.getElementById("createActivityForm");
 const createTitle = document.getElementById("createTitleInput");
 const createDifficulty = document.getElementById("createDifficultyInput");
 const createType = document.getElementById("createTypeInput");
-const createCreatorName = document.getElementById("createCreatorNameInput");
+const createStartTime = document.getElementById("createStartTimeInput");
 const createCreatorQq = document.getElementById("createCreatorQqInput");
 
 // 新建活动弹窗（委托：按钮在活动工作台内动态渲染）
 elements.adminActivityPicker.addEventListener("click", (e) => {
   if (e.target.id === "newActivityBtn" || e.target.closest("#newActivityBtn")) {
     createTitle.value = ""; createDifficulty.value = "normal";
-    createType.value = ""; createCreatorName.value = ""; createCreatorQq.value = "";
+    createType.value = ""; createStartTime.value = ""; createCreatorQq.value = "";
     createDialog.showModal();
   }
 });
@@ -1992,8 +1992,8 @@ createForm.addEventListener("submit", async (e) => {
   try {
     appState = await api("/api/activities", { method: "POST", body: JSON.stringify({
       activityId: "", title: createTitle.value, difficulty: createDifficulty.value,
-      type: createType.value, creatorName: createCreatorName.value, creatorQq: createCreatorQq.value,
-      startTime: toLocal(now), endTime: toLocal(end), status: "active",
+      type: createType.value, startTime: createStartTime.value || toLocal(now), creatorQq: createCreatorQq.value,
+      endTime: toLocal(end), status: "active",
       counts: { tank: 4, healer: 5, boss: 0, dps: 16 },
       expectedConfigRevision: appState?.activity?.configRevision || 1,
       expectedRosterRevision: appState?.activity?.rosterRevision || 1

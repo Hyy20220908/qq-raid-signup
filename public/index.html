@@ -291,10 +291,7 @@
     <dialog id="createActivityDialog" class="dialog small-dialog">
       <form id="createActivityForm" method="dialog">
         <div class="dialog-head">
-          <div>
-            <span class="dialog-kicker">团长后台</span>
-            <h2>新建活动</h2>
-          </div>
+          <h2>新建活动</h2>
           <button id="closeCreateDialogBtn" class="icon-button" value="cancel" type="button" aria-label="关闭">×</button>
         </div>
         <label>
@@ -313,8 +310,8 @@
           <input id="createTypeInput" maxlength="40" placeholder="开荒 / farm / 老板团" />
         </label>
         <label>
-          <span>创建者</span>
-          <input id="createCreatorNameInput" maxlength="24" placeholder="团长昵称" required />
+          <span>开始时间</span>
+          <input id="createStartTimeInput" type="datetime-local" />
         </label>
         <label>
           <span>创建者 QQ</span>
