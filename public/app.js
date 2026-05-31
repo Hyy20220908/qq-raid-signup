@@ -1994,13 +1994,11 @@ document.getElementById("cancelCreateBtn").addEventListener("click", () => creat
 document.getElementById("closeCreateDialogBtn").addEventListener("click", () => createDialog.close());
 createForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const now = new Date(), end = new Date(now.getTime() + 7200000);
-  const toLocal = (d) => d.toISOString().slice(0, 16);
   try {
     appState = await api("/api/activities", { method: "POST", body: JSON.stringify({
       activityId: "", title: createTitle.value, difficulty: createDifficulty.value,
-      type: createType.value, startTime: createStartTime.value || toLocal(now), creatorQq: createCreatorQq.value,
-      endTime: toLocal(end), status: "active",
+      type: createType.value, startTime: createStartTime.value, creatorQq: createCreatorQq.value,
+      endTime: "", status: "active",
       counts: { tank: 4, healer: 5, boss: 0, dps: 16 },
       expectedConfigRevision: appState?.activity?.configRevision || 1,
       expectedRosterRevision: appState?.activity?.rosterRevision || 1
