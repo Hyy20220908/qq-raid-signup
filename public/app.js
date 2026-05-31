@@ -642,7 +642,6 @@ function fillActivityForm(activity) {
   elements.healerCountInput.value = source.counts?.healer ?? 5;
   elements.dpsCountInput.value = source.counts?.dps ?? 16;
   updateCountTotal();
-  if (elements.activityFormTitle) elements.activityFormTitle.textContent = source.id ? "编辑活动" : "创建新活动";
   setAdminFormDirty(false);
 }
 

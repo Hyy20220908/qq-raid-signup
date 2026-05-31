@@ -90,8 +90,7 @@
             <div id="adminActivityPicker" class="admin-activity-picker" aria-label="后台活动选择"></div>
             <form id="activityForm" class="admin-form">
               <input id="activityIdInput" type="hidden" />
-              <h3 id="activityFormTitle" class="form-main-title">编辑活动</h3>
-              <h4 class="form-section-title">活动信息</h4>
+              <h3 class="form-main-title">活动信息</h3>
               <div class="form-fields">
                 <label class="form-field full-width">
                   <span>活动标题</span>
@@ -132,12 +131,12 @@
                   </select>
                 </label>
               </div>
-              <div class="count-row">
-                <div class="count-inputs">
-                  <label><span>T 位</span><input id="tankCountInput" type="number" min="0" max="25" value="4" /></label>
-                  <label><span>奶位</span><input id="healerCountInput" type="number" min="0" max="25" value="5" /></label>
-                  <label><span>输出位</span><input id="dpsCountInput" type="number" min="0" max="25" value="16" /></label>
-                </div>
+                <div class="count-row">
+                  <div class="count-inputs">
+                    <label class="form-field"><span>T 位</span><input id="tankCountInput" type="number" min="0" max="25" value="4" /></label>
+                    <label class="form-field"><span>奶位</span><input id="healerCountInput" type="number" min="0" max="25" value="5" /></label>
+                    <label class="form-field"><span>输出位</span><input id="dpsCountInput" type="number" min="0" max="25" value="16" /></label>
+                  </div>
                 <span id="countTotal">合计 25 / 25</span>
                 <button id="activitySubmitBtn" class="primary-button" type="submit" disabled>保存修改</button>
               </div>
