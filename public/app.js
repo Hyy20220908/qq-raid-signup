@@ -492,6 +492,10 @@ function renderAdminActivityPicker() {
       ? `当前编辑：${selected.title}`
       : "请选择一个活动";
 
+  // 保存滚动位置，防止 innerHTML 重建后重置
+  const listEl = elements.adminActivityPicker.querySelector(".admin-activity-list");
+  const savedScrollLeft = listEl ? listEl.scrollLeft : 0;
+
   elements.adminActivityPicker.innerHTML = `
     <div class="admin-picker-head">
       <div>
@@ -539,6 +543,10 @@ function renderAdminActivityPicker() {
   for (const button of elements.adminActivityPicker.querySelectorAll("[data-admin-activity-id]")) {
     button.addEventListener("click", () => selectActivity(button.dataset.adminActivityId));
   }
+
+  // 恢复滚动位置
+  const newListEl = elements.adminActivityPicker.querySelector(".admin-activity-list");
+  if (newListEl) newListEl.scrollLeft = savedScrollLeft;
 }
 
 function renderArchivedActivities() {
